@@ -1,0 +1,7 @@
+# Backend dependencies
+fastapi
+sqlalchemy
+pandas
+openpyxl
+uvicorn
+python-multipart
