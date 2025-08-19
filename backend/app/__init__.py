@@ -1,6 +1,6 @@
 """
 Private Fund Management System Backend
-ÁßúÑ¡ûßï¡
+ç§å‹ŸåŸºé‡‘ç®¡ç†ç³»ç»Ÿåç«¯
 """
 
 __version__ = "1.0.0"
