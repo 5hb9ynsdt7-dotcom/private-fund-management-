@@ -4,15 +4,7 @@
     <div class="page-header">
       <h2>{{ getPageTitle() }}</h2>
       <div class="header-actions">
-        <el-button 
-          type="primary" 
-          @click="exportToPDF" 
-          :loading="pdfExporting"
-          style="margin-right: 10px;"
-        >
-          <el-icon><Download /></el-icon>
-          {{ pdfExporting ? '导出中...' : '导出PDF' }}
-        </el-button>
+        <!-- PDF导出功能暂时移除 -->
         <el-button @click="refreshData" :loading="loading">
           <el-icon><Refresh /></el-icon>
           刷新数据
@@ -309,7 +301,7 @@ import { ElMessage } from 'element-plus'
 import { Download } from '@element-plus/icons-vue'
 import { positionAPI } from '@/api/position'
 import * as echarts from 'echarts'
-// import html2pdf from 'html2pdf.js'
+// PDF导出功能暂时移除
 
 const route = useRoute()
 const router = useRouter()
@@ -318,7 +310,7 @@ const router = useRouter()
 const loading = ref(false)
 const sortBy = ref('strategy')
 const periodRange = ref(null)
-const pdfExporting = ref(false)
+// const pdfExporting = ref(false) // PDF功能暂时移除
 const positionData = ref({
   client_info: {},
   positions: [],
@@ -674,88 +666,7 @@ const goBack = () => {
   router.push('/position')
 }
 
-// PDF导出功能 (临时禁用)
-const exportToPDF = async () => {
-  console.log('PDF导出开始...')
-  ElMessage.warning('PDF导出功能正在修复中，请稍后再试')
-  return
-  
-  if (pdfExporting.value) return
-  
-  try {
-    pdfExporting.value = true
-    // console.log('html2pdf object:', html2pdf)
-    
-    // 生成文件名：客户名_存量日期.pdf
-    const clientName = positionData.value.client_info?.client_name || '客户'
-    const stockDate = positionData.value.client_info?.latest_update || new Date().toISOString().split('T')[0]
-    const formattedDate = stockDate.replace(/-/g, '')
-    const filename = `${clientName}_${formattedDate}.pdf`
-    console.log('生成的文件名:', filename)
-    
-    // 获取要导出的元素
-    const element = document.querySelector('.position-detail')
-    console.log('找到的元素:', element)
-    if (!element) {
-      throw new Error('找不到要导出的页面内容')
-    }
-    
-    // 临时添加PDF导出样式类
-    element.classList.add('pdf-exporting')
-    
-    // 等待样式应用
-    await new Promise(resolve => setTimeout(resolve, 100))
-    
-    // 配置PDF选项
-    const opt = {
-      margin: [10, 10, 10, 10], // 上右下左边距 (mm)
-      filename: filename,
-      image: { 
-        type: 'jpeg', 
-        quality: 0.75 // 75%质量，平衡清晰度和文件大小
-      },
-      html2canvas: { 
-        scale: 1.2, // 适中的清晰度
-        useCORS: true,
-        letterRendering: true,
-        allowTaint: false,
-        backgroundColor: '#ffffff',
-        logging: false,
-        width: 1200, // 固定宽度，保持当前显示效果
-        height: element.scrollHeight
-      },
-      jsPDF: { 
-        unit: 'mm', 
-        format: 'a4', 
-        orientation: 'portrait',
-        compress: true // 启用压缩
-      }
-    }
-    
-    // 生成PDF
-    console.log('开始生成PDF...')
-    console.log('PDF配置选项:', opt)
-    await html2pdf().set(opt).from(element).save()
-    console.log('PDF生成完成')
-    
-    // 移除PDF导出样式类
-    element.classList.remove('pdf-exporting')
-    
-    ElMessage.success(`PDF导出成功：${filename}`)
-    
-  } catch (error) {
-    console.error('PDF导出失败:', error)
-    ElMessage.error('PDF导出失败: ' + (error.message || '未知错误'))
-    
-    // 确保移除样式类
-    const element = document.querySelector('.position-detail')
-    if (element) {
-      element.classList.remove('pdf-exporting')
-    }
-  } finally {
-    pdfExporting.value = false
-  }
-}
+// PDF导出功能已暂时移除
 
 // 格式化函数
 const formatMoney = (amount) => {
