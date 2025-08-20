@@ -1320,7 +1320,10 @@ async def process_client_dividend_excel(file_content: bytes, filename: str, over
                     failed_count += 1
                     continue
                 
-                # 检查分红记录是否已存在
+                # 创建记录标识符用于批次内重复检查
+                record_key = (group_id, fund_code, str(confirmed_date), transaction_type)
+                
+                # 检查分红记录是否已存在（数据库中）
                 existing_dividend = db.query(ClientDividend).filter(
                     and_(
                         ClientDividend.group_id == group_id,
@@ -1336,22 +1339,54 @@ async def process_client_dividend_excel(file_content: bytes, filename: str, over
                         existing_dividend.confirmed_amount = confirmed_amount
                         existing_dividend.confirmed_shares = confirmed_shares
                         updated_count += 1
+                        logger.info(f"更新分红记录: {group_id}, {fund_code}, {confirmed_date}, {transaction_type}")
                     else:
-                        errors.append(f"第{index+2}行: 分红记录已存在 ({group_id}, {fund_code}, {confirmed_date}, {transaction_type})")
+                        errors.append(f"第{index+2}行: 分红记录已存在 ({group_id}, {fund_code}, {confirmed_date}, {transaction_type})，请勾选'覆盖已存在数据'选项")
                         failed_count += 1
                         continue
                 else:
-                    # 创建新分红记录
-                    new_dividend = ClientDividend(
-                        group_id=group_id,
-                        fund_code=fund_code,
-                        transaction_type=transaction_type,
-                        confirmed_amount=confirmed_amount,
-                        confirmed_shares=confirmed_shares,
-                        confirmed_date=confirmed_date
-                    )
-                    db.add(new_dividend)
-                    created_count += 1
+                    # 使用 merge 来处理可能的约束冲突
+                    try:
+                        new_dividend = ClientDividend(
+                            group_id=group_id,
+                            fund_code=fund_code,
+                            transaction_type=transaction_type,
+                            confirmed_amount=confirmed_amount,
+                            confirmed_shares=confirmed_shares,
+                            confirmed_date=confirmed_date
+                        )
+                        db.add(new_dividend)
+                        db.flush()  # 立即检查约束
+                        created_count += 1
+                        logger.info(f"创建分红记录: {group_id}, {fund_code}, {confirmed_date}, {transaction_type}")
+                    except Exception as constraint_error:
+                        db.rollback()
+                        if "UNIQUE constraint failed" in str(constraint_error):
+                            if override_existing:
+                                # 如果允许覆盖，重新查询并更新
+                                existing_dividend = db.query(ClientDividend).filter(
+                                    and_(
+                                        ClientDividend.group_id == group_id,
+                                        ClientDividend.fund_code == fund_code,
+                                        ClientDividend.confirmed_date == confirmed_date,
+                                        ClientDividend.transaction_type == transaction_type
+                                    )
+                                ).first()
+                                if existing_dividend:
+                                    existing_dividend.confirmed_amount = confirmed_amount
+                                    existing_dividend.confirmed_shares = confirmed_shares
+                                    updated_count += 1
+                                    logger.info(f"约束冲突后更新分红记录: {group_id}, {fund_code}, {confirmed_date}, {transaction_type}")
+                                else:
+                                    errors.append(f"第{index+2}行: 约束冲突但找不到记录 ({group_id}, {fund_code}, {confirmed_date}, {transaction_type})")
+                                    failed_count += 1
+                                    continue
+                            else:
+                                errors.append(f"第{index+2}行: 分红记录重复 ({group_id}, {fund_code}, {confirmed_date}, {transaction_type})，请勾选'覆盖已存在数据'选项")
+                                failed_count += 1
+                                continue
+                        else:
+                            raise constraint_error
                 
                 success_count += 1
                 
