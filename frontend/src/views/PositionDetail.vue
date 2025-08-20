@@ -366,12 +366,34 @@ const formatChartValue = (value) => {
   return num.toLocaleString('zh-CN')
 }
 
+// 定义饼图颜色配置
+const chartColors = {
+  // 持仓分布 - 蓝紫色系，柔和且专业
+  holding: [
+    '#5B8FF9', '#5AD8A6', '#5D7092', '#F6BD16', '#E86452',
+    '#6DC8EC', '#945FB9', '#FF9845', '#1E9493', '#FF99C3',
+    '#BDD2FD', '#BDEFDB', '#C2C8D5', '#FFE0B3', '#FFCCC7'
+  ],
+  // 大类策略 - 绿蓝色系，清晰区分
+  majorStrategy: [
+    '#2E8B57', '#4682B4', '#CD853F', '#8B4513', '#4169E1',
+    '#228B22', '#6495ED', '#D2691E', '#A0522D', '#1E90FF'
+  ],
+  // 细分策略 - 暖色系，温和不刺眼
+  subStrategy: [
+    '#8B7355', '#CD919E', '#8FBC8F', '#DDA0DD', '#F0E68C',
+    '#D2B48C', '#DEB887', '#98FB98', '#F5DEB3', '#FFE4E1',
+    '#E6E6FA', '#FFF8DC', '#FFEFD5', '#F0F8FF', '#FFFACD'
+  ]
+}
+
 // 渲染图表
 const renderCharts = () => {
   // 持仓分布饼图
   if (holdingChartRef.value && positionData.value.holding_distribution?.length > 0) {
     const chart = echarts.init(holdingChartRef.value)
     const option = {
+      color: chartColors.holding,
       tooltip: {
         trigger: 'item',
         formatter: (params) => {
@@ -414,6 +436,7 @@ const renderCharts = () => {
   if (majorStrategyChartRef.value && positionData.value.major_strategy_distribution?.length > 0) {
     const chart = echarts.init(majorStrategyChartRef.value)
     const option = {
+      color: chartColors.majorStrategy,
       tooltip: {
         trigger: 'item',
         formatter: (params) => {
@@ -456,6 +479,7 @@ const renderCharts = () => {
   if (subStrategyChartRef.value && positionData.value.sub_strategy_distribution?.length > 0) {
     const chart = echarts.init(subStrategyChartRef.value)
     const option = {
+      color: chartColors.subStrategy,
       tooltip: {
         trigger: 'item',
         formatter: (params) => {
