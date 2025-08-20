@@ -309,7 +309,7 @@ import { ElMessage } from 'element-plus'
 import { Download } from '@element-plus/icons-vue'
 import { positionAPI } from '@/api/position'
 import * as echarts from 'echarts'
-import html2pdf from 'html2pdf.js'
+// import html2pdf from 'html2pdf.js'
 
 const route = useRoute()
 const router = useRouter()
@@ -674,21 +674,28 @@ const goBack = () => {
   router.push('/position')
 }
 
-// PDF导出功能
+// PDF导出功能 (临时禁用)
 const exportToPDF = async () => {
+  console.log('PDF导出开始...')
+  ElMessage.warning('PDF导出功能正在修复中，请稍后再试')
+  return
+  
   if (pdfExporting.value) return
   
   try {
     pdfExporting.value = true
+    // console.log('html2pdf object:', html2pdf)
     
     // 生成文件名：客户名_存量日期.pdf
     const clientName = positionData.value.client_info?.client_name || '客户'
     const stockDate = positionData.value.client_info?.latest_update || new Date().toISOString().split('T')[0]
     const formattedDate = stockDate.replace(/-/g, '')
     const filename = `${clientName}_${formattedDate}.pdf`
+    console.log('生成的文件名:', filename)
     
     // 获取要导出的元素
     const element = document.querySelector('.position-detail')
+    console.log('找到的元素:', element)
     if (!element) {
       throw new Error('找不到要导出的页面内容')
     }
@@ -726,7 +733,10 @@ const exportToPDF = async () => {
     }
     
     // 生成PDF
+    console.log('开始生成PDF...')
+    console.log('PDF配置选项:', opt)
     await html2pdf().set(opt).from(element).save()
+    console.log('PDF生成完成')
     
     // 移除PDF导出样式类
     element.classList.remove('pdf-exporting')
