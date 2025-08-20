@@ -4,6 +4,15 @@
     <div class="page-header">
       <h2>{{ getPageTitle() }}</h2>
       <div class="header-actions">
+        <el-button 
+          type="primary" 
+          @click="exportToPDF" 
+          :loading="pdfExporting"
+          style="margin-right: 10px;"
+        >
+          <el-icon><Download /></el-icon>
+          {{ pdfExporting ? '导出中...' : '导出PDF' }}
+        </el-button>
         <el-button @click="refreshData" :loading="loading">
           <el-icon><Refresh /></el-icon>
           刷新数据
@@ -297,8 +306,10 @@
 import { ref, reactive, onMounted, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import { Download } from '@element-plus/icons-vue'
 import { positionAPI } from '@/api/position'
 import * as echarts from 'echarts'
+import html2pdf from 'html2pdf.js'
 
 const route = useRoute()
 const router = useRouter()
@@ -307,6 +318,7 @@ const router = useRouter()
 const loading = ref(false)
 const sortBy = ref('strategy')
 const periodRange = ref(null)
+const pdfExporting = ref(false)
 const positionData = ref({
   client_info: {},
   positions: [],
@@ -662,6 +674,79 @@ const goBack = () => {
   router.push('/position')
 }
 
+// PDF导出功能
+const exportToPDF = async () => {
+  if (pdfExporting.value) return
+  
+  try {
+    pdfExporting.value = true
+    
+    // 生成文件名：客户名_存量日期.pdf
+    const clientName = positionData.value.client_info?.client_name || '客户'
+    const stockDate = positionData.value.client_info?.latest_update || new Date().toISOString().split('T')[0]
+    const formattedDate = stockDate.replace(/-/g, '')
+    const filename = `${clientName}_${formattedDate}.pdf`
+    
+    // 获取要导出的元素
+    const element = document.querySelector('.position-detail')
+    if (!element) {
+      throw new Error('找不到要导出的页面内容')
+    }
+    
+    // 临时添加PDF导出样式类
+    element.classList.add('pdf-exporting')
+    
+    // 等待样式应用
+    await new Promise(resolve => setTimeout(resolve, 100))
+    
+    // 配置PDF选项
+    const opt = {
+      margin: [10, 10, 10, 10], // 上右下左边距 (mm)
+      filename: filename,
+      image: { 
+        type: 'jpeg', 
+        quality: 0.75 // 75%质量，平衡清晰度和文件大小
+      },
+      html2canvas: { 
+        scale: 1.2, // 适中的清晰度
+        useCORS: true,
+        letterRendering: true,
+        allowTaint: false,
+        backgroundColor: '#ffffff',
+        logging: false,
+        width: 1200, // 固定宽度，保持当前显示效果
+        height: element.scrollHeight
+      },
+      jsPDF: { 
+        unit: 'mm', 
+        format: 'a4', 
+        orientation: 'portrait',
+        compress: true // 启用压缩
+      }
+    }
+    
+    // 生成PDF
+    await html2pdf().set(opt).from(element).save()
+    
+    // 移除PDF导出样式类
+    element.classList.remove('pdf-exporting')
+    
+    ElMessage.success(`PDF导出成功：${filename}`)
+    
+  } catch (error) {
+    console.error('PDF导出失败:', error)
+    ElMessage.error('PDF导出失败: ' + (error.message || '未知错误'))
+    
+    // 确保移除样式类
+    const element = document.querySelector('.position-detail')
+    if (element) {
+      element.classList.remove('pdf-exporting')
+    }
+  } finally {
+    pdfExporting.value = false
+  }
+}
+
 // 格式化函数
 const formatMoney = (amount) => {
   if (amount == null || amount === '') return '--'
@@ -881,6 +966,71 @@ onMounted(() => {
 .loss-text {
   color: #67c23a;  /* 负收益绿色 */
   font-weight: 500;
+}
+
+/* PDF导出优化样式 */
+@media print {
+  .header-actions {
+    display: none !important;
+  }
+  
+  .page-header {
+    margin-bottom: 20px;
+  }
+  
+  .position-detail {
+    padding: 0;
+    background: white;
+  }
+  
+  .el-card {
+    box-shadow: none;
+    border: 1px solid #ddd;
+  }
+  
+  .charts-section {
+    page-break-inside: avoid;
+  }
+  
+  .position-table {
+    page-break-inside: avoid;
+  }
+  
+  /* 确保表格在PDF中正确显示 */
+  .el-table {
+    font-size: 12px;
+  }
+  
+  .el-table th,
+  .el-table td {
+    padding: 8px 4px;
+  }
+}
+
+/* PDF导出时的特殊样式 */
+.position-detail.pdf-exporting {
+  width: 1200px;
+  background: white;
+  font-size: 14px;
+}
+
+.position-detail.pdf-exporting .header-actions {
+  display: none !important;
+}
+
+.position-detail.pdf-exporting .el-card {
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  margin-bottom: 16px;
+}
+
+.position-detail.pdf-exporting .el-table {
+  font-size: 12px;
+}
+
+.position-detail.pdf-exporting .el-table th,
+.position-detail.pdf-exporting .el-table td {
+  padding: 8px 4px;
+  border-color: #ddd;
 }
 
 /* 响应式设计 */
