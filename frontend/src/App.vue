@@ -23,6 +23,11 @@
             <span>净值管理</span>
           </el-menu-item>
           
+          <el-menu-item index="/nav-crawler">
+            <el-icon><Download /></el-icon>
+            <span>净值抓取</span>
+          </el-menu-item>
+          
           <el-menu-item index="/strategy">
             <el-icon><Setting /></el-icon>
             <span>策略管理</span>
@@ -36,6 +41,16 @@
           <el-menu-item index="/trade">
             <el-icon><Histogram /></el-icon>
             <span>交易分析</span>
+          </el-menu-item>
+          
+          <el-menu-item index="/project-holding">
+            <el-icon><Management /></el-icon>
+            <span>项目持仓</span>
+          </el-menu-item>
+          
+          <el-menu-item index="/stage-performance">
+            <el-icon><TrendCharts /></el-icon>
+            <span>阶段涨幅</span>
           </el-menu-item>
         </el-menu>
       </el-aside>
@@ -216,5 +231,48 @@ body {
 /* 表单样式 */
 .el-form-item {
   margin-bottom: 22px;
+}
+
+/* 统一数字字体为Inter - 全局样式 */
+/* 统计数字字体 */
+.el-statistic__content,
+.el-statistic__number {
+  font-family: 'Inter', 'SF Pro Display', 'Helvetica Neue', sans-serif !important;
+}
+
+/* 表格中的金额、数字类字体统一 */
+.money-text,
+.shares-text,
+.percent-text,
+.nav-value,
+.fee-text,
+.dividend-text,
+.profit-text,
+.loss-text,
+.date-cell {
+  font-family: 'Inter', 'SF Pro Display', 'Helvetica Neue', sans-serif !important;
+}
+
+/* 表格汇总行数字字体 */
+.el-table__footer .cell {
+  font-family: 'Inter', 'SF Pro Display', 'Helvetica Neue', sans-serif !important;
+}
+
+/* 其他可能的数字显示元素 */
+.el-table__cell .cell,
+.el-table td .cell,
+.el-table th .cell {
+  font-family: inherit;
+}
+
+/* 表格中数字列统一字体 */
+.el-table .el-table__cell:not(.el-table-column--selection) .cell {
+  font-family: inherit;
+}
+
+/* 统计相关数字显示 */
+.el-statistic,
+.el-card .el-statistic {
+  font-family: 'Inter', 'SF Pro Display', 'Helvetica Neue', sans-serif;
 }
 </style>

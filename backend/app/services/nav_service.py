@@ -85,6 +85,7 @@ class NavService:
     
     def get_nav_list(self, 
                      fund_code: Optional[str] = None,
+                     fund_name: Optional[str] = None,
                      start_date: Optional[date] = None,
                      end_date: Optional[date] = None,
                      page: int = 1,
@@ -101,7 +102,9 @@ class NavService:
             
             # 应用筛选条件
             if fund_code:
-                query = query.filter(Nav.fund_code == fund_code)
+                query = query.filter(Nav.fund_code.like(f"%{fund_code}%"))
+            if fund_name:
+                query = query.filter(Fund.fund_name.like(f"%{fund_name}%"))
             if start_date:
                 query = query.filter(Nav.nav_date >= start_date)
             if end_date:

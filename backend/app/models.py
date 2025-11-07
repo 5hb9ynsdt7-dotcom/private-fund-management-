@@ -204,6 +204,176 @@ class ClientDividend(Base):
         return f"<ClientDividend(group_id='{self.group_id}', fund_code='{self.fund_code}', type='{self.transaction_type}', amount={self.confirmed_amount})>"
 
 
+class Transaction(Base):
+    """
+    交易表 - 存储客户基金交易记录，用于交易分析模块
+    """
+    __tablename__ = 'transaction'
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    group_id = Column(String(20), nullable=False, comment='集团号')
+    client_name = Column(String(50), comment='客户遮蔽姓名')
+    fund_name = Column(String(100), comment='基金名称')
+    transaction_type = Column(String(30), nullable=False, comment='交易类型名称')
+    confirmed_date = Column(Date, nullable=False, comment='交易确认日期')
+    confirmed_shares = Column(Numeric(16, 6), comment='确认份额')
+    confirmed_amount = Column(Numeric(16, 2), comment='确认金额')
+    transaction_fee = Column(Numeric(16, 2), default=0, comment='手续费')
+    product_code = Column(String(30), comment='产品代码')
+    product_name = Column(String(100), comment='产品名称')
+    
+    # 外键关系
+    # 注意：这里不使用外键约束，因为交易数据可能包含系统中不存在的基金或客户
+    # 这样设计更灵活，适合数据分析场景
+    
+    # 为常见查询添加索引，提高查询性能
+    # 注意：SQLAlchemy会根据这些字段组合自动创建索引
+    
+    def __repr__(self):
+        return f"<Transaction(group_id='{self.group_id}', type='{self.transaction_type}', amount={self.confirmed_amount})>"
+    
+    @classmethod
+    def validate_transaction_data(cls, data: dict) -> tuple[bool, list[str]]:
+        """
+        验证交易数据
+        返回: (是否有效, 错误信息列表)
+        """
+        errors = []
+        
+        # 必填字段验证
+        required_fields = ['group_id', 'transaction_type', 'confirmed_date']
+        for field in required_fields:
+            if not data.get(field):
+                errors.append(f"缺少必填字段: {field}")
+        
+        # 集团号格式验证（应为数字）
+        group_id = data.get('group_id')
+        if group_id and not str(group_id).strip().isdigit():
+            errors.append("集团号必须为数字")
+        
+        # 金额字段验证（如果存在）
+        numeric_fields = ['confirmed_shares', 'confirmed_amount', 'transaction_fee']
+        for field in numeric_fields:
+            value = data.get(field)
+            if value is not None:
+                try:
+                    float(value)
+                except (ValueError, TypeError):
+                    errors.append(f"{field}必须为有效数字")
+        
+        # 日期验证
+        confirmed_date = data.get('confirmed_date')
+        if confirmed_date:
+            try:
+                if isinstance(confirmed_date, str):
+                    DateConverter.convert_date_string(confirmed_date)
+            except ValueError as e:
+                errors.append(f"交易确认日期格式错误: {str(e)}")
+        
+        return len(errors) == 0, errors
+
+
+class ProjectHoldingAsset(Base):
+    """
+    项目持仓资产表 - 存储项目资产类别配置数据
+    """
+    __tablename__ = 'project_holding_asset'
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    project_name = Column(String(50), nullable=False, comment='项目名称')
+    month = Column(Date, nullable=False, comment='月份')
+    a_share_ratio = Column(Numeric(5, 2), comment='A股比例')
+    h_share_ratio = Column(Numeric(5, 2), comment='H股比例') 
+    us_share_ratio = Column(Numeric(5, 2), comment='美股比例')
+    other_market_ratio = Column(Numeric(5, 2), comment='其他市场比例')
+    stock_total_ratio = Column(Numeric(5, 2), comment='股票总仓位比例(计算字段)')
+    global_bond_ratio = Column(Numeric(5, 2), comment='全球债券比例')
+    convertible_bond_ratio = Column(Numeric(5, 2), comment='可转债比例')
+    other_ratio = Column(Numeric(5, 2), comment='其他比例')
+    created_at = Column(Date, default=func.current_date(), comment='创建时间')
+    
+    # 复合唯一约束：同一项目同一月份只能有一条资产配置记录
+    __table_args__ = (
+        UniqueConstraint('project_name', 'month', name='uk_project_asset_month'),
+    )
+    
+    def __repr__(self):
+        return f"<ProjectHoldingAsset(project='{self.project_name}', month='{self.month}', stock_total={self.stock_total_ratio})>"
+    
+    @classmethod
+    def calculate_stock_total_ratio(cls, a_share: float = 0, h_share: float = 0, 
+                                   us_share: float = 0, other_market: float = 0) -> float:
+        """计算股票总仓位比例"""
+        return (a_share or 0) + (h_share or 0) + (us_share or 0) + (other_market or 0)
+
+
+class ProjectHoldingIndustry(Base):
+    """
+    项目持仓行业表 - 存储项目行业分类配置数据
+    """
+    __tablename__ = 'project_holding_industry'
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    project_name = Column(String(50), nullable=False, comment='项目名称')
+    month = Column(Date, nullable=False, comment='月份')
+    ratio_type = Column(String(20), nullable=False, comment='行业比例计算方式: based_on_stock/based_on_total')
+    industry1 = Column(String(50), comment='第一持仓行业')
+    industry1_ratio = Column(Numeric(5, 2), comment='第一持仓行业比例')
+    industry2 = Column(String(50), comment='第二持仓行业')
+    industry2_ratio = Column(Numeric(5, 2), comment='第二持仓行业比例')
+    industry3 = Column(String(50), comment='第三持仓行业')
+    industry3_ratio = Column(Numeric(5, 2), comment='第三持仓行业比例')
+    industry4 = Column(String(50), comment='第四持仓行业')
+    industry4_ratio = Column(Numeric(5, 2), comment='第四持仓行业比例')
+    industry5 = Column(String(50), comment='第五持仓行业')
+    industry5_ratio = Column(Numeric(5, 2), comment='第五持仓行业比例')
+    created_at = Column(Date, default=func.current_date(), comment='创建时间')
+    
+    # 复合唯一约束：同一项目同一月份只能有一条行业配置记录
+    __table_args__ = (
+        UniqueConstraint('project_name', 'month', name='uk_project_industry_month'),
+    )
+    
+    def __repr__(self):
+        return f"<ProjectHoldingIndustry(project='{self.project_name}', month='{self.month}', ratio_type='{self.ratio_type}')>"
+    
+    @classmethod
+    def validate_ratio_type(cls, ratio_type: str) -> bool:
+        """验证行业比例计算方式"""
+        return ratio_type in ['based_on_stock', 'based_on_total']
+    
+    def get_industries_with_ratios(self) -> list[tuple[str, float]]:
+        """获取所有非空的行业及其比例"""
+        industries = []
+        for i in range(1, 6):
+            industry_name = getattr(self, f'industry{i}')
+            industry_ratio = getattr(self, f'industry{i}_ratio')
+            if industry_name and industry_ratio:
+                industries.append((industry_name, float(industry_ratio)))
+        return industries
+    
+    def calculate_actual_ratios(self, stock_total_ratio: float) -> dict[str, float]:
+        """
+        计算行业实际占总仓位的比例
+        :param stock_total_ratio: 股票总仓位比例，用于based_on_stock类型的计算
+        :return: {行业名称: 实际比例}
+        """
+        actual_ratios = {}
+        industries = self.get_industries_with_ratios()
+        
+        for industry_name, industry_ratio in industries:
+            if self.ratio_type == 'based_on_stock':
+                # 基于股票仓位计算：行业实际占比 = 行业比例 × 股票总仓位比例
+                actual_ratio = industry_ratio * stock_total_ratio / 100
+            else:  # based_on_total
+                # 基于总仓位：行业比例直接表示占总仓位的比例
+                actual_ratio = industry_ratio
+            
+            actual_ratios[industry_name] = actual_ratio
+            
+        return actual_ratios
+
+
 class DateConverter:
     """
     日期格式转换工具类
@@ -300,10 +470,14 @@ def validate_nav_data(unit_nav: float, accum_nav: float) -> tuple[bool, str]:
 
 # 数据库表创建顺序（考虑外键依赖）
 TABLES_CREATION_ORDER = [
-    Fund,      # 基金主表（无外键依赖）
-    Client,    # 客户主表（无外键依赖）
-    Strategy,  # 策略表（依赖Fund）
-    Nav,       # 净值表（依赖Fund）
-    Position,  # 持仓表（依赖Client和Fund）
-    Dividend,  # 分红表（依赖Fund）
+    Fund,                   # 基金主表（无外键依赖）
+    Client,                 # 客户主表（无外键依赖）
+    Strategy,               # 策略表（依赖Fund）
+    Nav,                    # 净值表（依赖Fund）
+    Position,               # 持仓表（依赖Client和Fund）
+    Dividend,               # 分红表（依赖Fund）
+    ClientDividend,         # 客户分红表（依赖Client和Fund）
+    Transaction,            # 交易表（无外键依赖，独立存储）
+    ProjectHoldingAsset,    # 项目持仓资产表（无外键依赖）
+    ProjectHoldingIndustry, # 项目持仓行业表（无外键依赖）
 ]

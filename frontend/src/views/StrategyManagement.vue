@@ -6,83 +6,48 @@
       <p class="page-description">管理基金投资策略分类和配置</p>
     </div>
     
-    <!-- 统计卡片 -->
-    <el-row :gutter="24" class="stats-section">
-      <el-col :span="6">
-        <el-card class="stat-card">
-          <el-statistic
-            title="策略总数"
-            :value="statistics.totalStrategies"
-            suffix="个"
-          >
-            <template #prefix>
-              <el-icon style="color: #409eff"><TrendCharts /></el-icon>
-            </template>
-          </el-statistic>
+    <!-- 操作区域 -->
+    <el-row :gutter="24" class="action-section">
+      <!-- 批量上传 -->
+      <el-col :lg="12" :md="24">
+        <el-card class="upload-section" shadow="hover">
+          <template #header>
+            <div class="card-header">
+              <span>批量上传策略配置</span>
+              <el-tooltip content="支持Excel文件批量导入策略配置">
+                <el-icon><QuestionFilled /></el-icon>
+              </el-tooltip>
+            </div>
+          </template>
+          
+          <ExcelUploader
+            ref="strategyUploaderRef"
+            :upload-api="uploadStrategyFiles"
+            template-url="/templates/strategy_template.xlsx"
+            accept=".xlsx,.xls"
+            @success="handleUploadSuccess"
+            @error="handleUploadError"
+            @progress="handleUploadProgress"
+          />
         </el-card>
       </el-col>
-      <el-col :span="6">
-        <el-card class="stat-card">
-          <el-statistic
-            title="成长策略"
-            :value="statistics.growthStrategies"
-            suffix="个"
-          >
-            <template #prefix>
-              <el-icon style="color: #67c23a"><TrendCharts /></el-icon>
-            </template>
-          </el-statistic>
-        </el-card>
-      </el-col>
-      <el-col :span="6">
-        <el-card class="stat-card">
-          <el-statistic
-            title="固收策略"
-            :value="statistics.fixedIncomeStrategies"
-            suffix="个"
-          >
-            <template #prefix>
-              <el-icon style="color: #e6a23c"><TrendCharts /></el-icon>
-            </template>
-          </el-statistic>
-        </el-card>
-      </el-col>
-      <el-col :span="6">
-        <el-card class="stat-card">
-          <el-statistic
-            title="QD策略"
-            :value="statistics.qdStrategies"
-            suffix="个"
-          >
-            <template #prefix>
-              <el-icon style="color: #f56c6c"><TrendCharts /></el-icon>
-            </template>
-          </el-statistic>
+      
+      <!-- 手动添加 -->
+      <el-col :lg="12" :md="24">
+        <el-card class="manual-add-section" shadow="hover">
+          <template #header>
+            <div class="card-header">
+              <span>手动添加策略</span>
+              <el-tooltip content="单个策略配置快速录入">
+                <el-icon><QuestionFilled /></el-icon>
+              </el-tooltip>
+            </div>
+          </template>
+          
+          <StrategyManualForm @success="handleManualAddSuccess" />
         </el-card>
       </el-col>
     </el-row>
-    
-    <!-- 批量上传区域 -->
-    <el-card class="upload-section" shadow="hover">
-      <template #header>
-        <div class="card-header">
-          <span>批量上传策略配置</span>
-          <el-tooltip content="支持Excel文件批量导入策略配置">
-            <el-icon><QuestionFilled /></el-icon>
-          </el-tooltip>
-        </div>
-      </template>
-      
-      <ExcelUploader
-        ref="strategyUploaderRef"
-        :upload-api="uploadStrategyFiles"
-        template-url="/templates/strategy_template.xlsx"
-        accept=".xlsx,.xls"
-        @success="handleUploadSuccess"
-        @error="handleUploadError"
-        @progress="handleUploadProgress"
-      />
-    </el-card>
     
     <!-- 操作工具栏 -->
     <el-card class="toolbar-section" shadow="hover">
@@ -166,7 +131,6 @@
         @current-change="handleCurrentChange"
         @edit="handleEdit"
         @delete="handleDelete"
-        @row-dblclick="handleRowDoubleClick"
       />
     </el-card>
     
@@ -195,6 +159,7 @@ import StrategyFilterBar from '@/components/StrategyFilterBar.vue'
 import StrategyDataTable from '@/components/StrategyDataTable.vue'
 import StrategyEditDialog from '@/components/StrategyEditDialog.vue'
 import StrategyBatchEditDialog from '@/components/StrategyBatchEditDialog.vue'
+import StrategyManualForm from '@/components/StrategyManualForm.vue'
 import { strategyAPI } from '@/api/strategy'
 import { downloadFile } from '@/utils'
 
@@ -213,13 +178,8 @@ const statistics = reactive({
   qdStrategies: 0
 })
 
-// 筛选条件
-const filters = reactive({
-  majorStrategy: '',
-  subStrategy: '',
-  isQd: null,
-  status: ''
-})
+// 筛选条件（暂时保留为空对象）
+const filters = reactive({})
 
 // 分页配置
 const pagination = reactive({
@@ -262,7 +222,6 @@ const loadStrategyData = async () => {
       page: pagination.currentPage,
       size: pagination.pageSize,
       search: searchText.value,
-      ...filters,
       sort_by: sortConfig.prop,
       sort_order: sortConfig.order === 'ascending' ? 'asc' : 'desc'
     }
@@ -305,12 +264,7 @@ const handleFilterSearch = () => {
 
 // 重置筛选条件
 const handleFilterReset = () => {
-  Object.assign(filters, {
-    majorStrategy: '',
-    subStrategy: '',
-    isQd: null,
-    status: ''
-  })
+  Object.assign(filters, {})
   pagination.currentPage = 1
   loadStrategyData()
 }
@@ -349,10 +303,6 @@ const handleEdit = (row) => {
   editDialogVisible.value = true
 }
 
-// 处理行双击
-const handleRowDoubleClick = (row) => {
-  handleEdit(row)
-}
 
 // 处理删除策略
 const handleDelete = async (row) => {
@@ -465,12 +415,17 @@ const handleUploadProgress = ({ uploading }) => {
   // 可以在这里显示进度条
 }
 
+// 处理手动添加成功
+const handleManualAddSuccess = (result) => {
+  ElMessage.success('策略添加成功')
+  refreshData()
+}
+
 // 导出数据
 const handleExport = async () => {
   try {
     const params = {
       search: searchText.value,
-      ...filters,
       sort_by: sortConfig.prop,
       sort_order: sortConfig.order === 'ascending' ? 'asc' : 'desc'
     }
@@ -530,8 +485,12 @@ onMounted(() => {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
 
-.upload-section {
+.action-section {
   margin-bottom: 24px;
+}
+
+.upload-section, .manual-add-section {
+  height: 100%;
 }
 
 .card-header {

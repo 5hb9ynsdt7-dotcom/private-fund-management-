@@ -99,54 +99,6 @@
         </template>
       </el-table-column>
       
-      <!-- 日涨跌幅 -->
-      <el-table-column
-        prop="daily_return"
-        label="日涨跌幅"
-        width="120"
-        sortable="custom"
-        align="right"
-      >
-        <template #default="{ row }">
-          <span
-            v-if="row.daily_return !== null && row.daily_return !== undefined"
-            :class="getReturnClass(row.daily_return)"
-          >
-            {{ formatPercent(row.daily_return, 2, true) }}
-          </span>
-          <span v-else class="text-muted">--</span>
-        </template>
-      </el-table-column>
-      
-      <!-- 数据状态 -->
-      <el-table-column
-        prop="status"
-        label="状态"
-        width="80"
-        align="center"
-      >
-        <template #default="{ row }">
-          <el-tag
-            :type="getStatusType(row.status)"
-            size="small"
-          >
-            {{ getStatusText(row.status) }}
-          </el-tag>
-        </template>
-      </el-table-column>
-      
-      <!-- 创建时间 -->
-      <el-table-column
-        prop="created_at"
-        label="创建时间"
-        width="160"
-        sortable="custom"
-        align="center"
-      >
-        <template #default="{ row }">
-          {{ formatDateTime(row.created_at) }}
-        </template>
-      </el-table-column>
       
       <!-- 操作列 -->
       <el-table-column
@@ -244,7 +196,7 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { formatDate, formatNumber, formatPercent } from '@/utils'
+import { formatDate, formatNumber } from '@/utils'
 
 const props = defineProps({
   data: {
@@ -285,50 +237,12 @@ const isMobile = computed(() => {
   return window.innerWidth < 768
 })
 
-// 格式化日期时间
-const formatDateTime = (datetime) => {
-  if (!datetime) return '--'
-  const date = new Date(datetime)
-  return date.toLocaleString('zh-CN', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit'
-  })
-}
 
 // 获取行号
 const getRowIndex = (index) => {
   return (currentPage.value - 1) * pageSize.value + index + 1
 }
 
-// 获取收益率样式
-const getReturnClass = (value) => {
-  if (value > 0) return 'text-success'
-  if (value < 0) return 'text-danger'
-  return 'text-muted'
-}
-
-// 获取状态类型
-const getStatusType = (status) => {
-  const statusMap = {
-    normal: 'success',
-    abnormal: 'danger',
-    pending: 'warning'
-  }
-  return statusMap[status] || 'info'
-}
-
-// 获取状态文本
-const getStatusText = (status) => {
-  const statusMap = {
-    normal: '正常',
-    abnormal: '异常',
-    pending: '待审核'
-  }
-  return statusMap[status] || '未知'
-}
 
 // 处理选择变化
 const handleSelectionChange = (selection) => {
@@ -404,7 +318,7 @@ defineExpose({
 }
 
 .nav-value {
-  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  /* 使用全局Inter字体 */
   font-weight: 500;
 }
 

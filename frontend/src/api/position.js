@@ -71,6 +71,11 @@ export const positionAPI = {
     return request.delete(`/api/position/clients/${groupId}`)
   },
 
+  // 批量删除客户及其所有持仓
+  batchDeleteClients(groupIds) {
+    return request.post('/api/position/clients/batch-delete', { group_ids: groupIds })
+  },
+
   // 上传客户分红数据
   uploadClientDividends(formData, overrideExisting = false) {
     return request.post('/api/position/client-dividends/upload', formData, {
@@ -79,5 +84,23 @@ export const positionAPI = {
         'Content-Type': 'multipart/form-data'
       }
     })
+  },
+
+  // 导出客户持仓详情图片
+  exportClientPositionImage(groupId, frontendUrl = 'http://localhost:3001', startDate = null, endDate = null) {
+    const params = { frontend_url: frontendUrl }
+    if (startDate && endDate) {
+      params.start_date = startDate
+      params.end_date = endDate
+    }
+    return request.get(`/api/position/clients/${groupId}/export-image`, {
+      params,
+      responseType: 'blob'
+    })
+  },
+
+  // 获取客户底层持仓分析
+  getUnderlyingAnalysis(groupId) {
+    return request.get(`/api/position/client/${groupId}/underlying-analysis`)
   }
 }

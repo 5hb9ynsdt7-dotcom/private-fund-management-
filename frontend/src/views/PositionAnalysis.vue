@@ -70,106 +70,111 @@
     </el-row>
     
     <!-- 上传区域 -->
-    <el-card class="upload-section" shadow="hover">
-      <template #header>
-        <div class="card-header">
-          <span>批量上传持仓数据</span>
-          <el-tooltip content="支持Excel文件批量导入客户持仓数据">
-            <el-icon><QuestionFilled /></el-icon>
-          </el-tooltip>
-        </div>
-      </template>
-      
-      <div class="upload-area">
-        <el-upload
-          ref="uploadRef"
-          class="upload-dragger"
-          drag
-          action=""
-          :auto-upload="false"
-          :file-list="fileList"
-          accept=".xlsx,.xls"
-          multiple
-          @change="handleFileChange"
-          @remove="handleFileRemove"
-        >
-          <el-icon class="el-icon--upload"><upload-filled /></el-icon>
-          <div class="el-upload__text">
-            将Excel文件拖到此处，或<em>点击上传</em>
-          </div>
-          <template #tip>
-            <div class="el-upload__tip">
-              支持.xlsx, .xls格式，可同时上传多个文件
+    <el-row :gutter="24">
+      <el-col :span="12">
+        <el-card class="upload-section" shadow="hover">
+          <template #header>
+            <div class="card-header">
+              <span>批量上传持仓数据</span>
+              <el-tooltip content="支持Excel文件批量导入客户持仓数据">
+                <el-icon><QuestionFilled /></el-icon>
+              </el-tooltip>
             </div>
           </template>
-        </el-upload>
-        
-        <div class="upload-controls" v-if="fileList.length">
-          <el-checkbox v-model="overrideExisting">覆盖已存在数据</el-checkbox>
-          <div class="upload-buttons">
-            <el-button @click="clearFiles">清空</el-button>
-            <el-button 
-              type="primary" 
-              :loading="uploading"
-              @click="uploadFiles"
+          
+          <div class="upload-area">
+            <el-upload
+              ref="uploadRef"
+              class="upload-dragger"
+              drag
+              action=""
+              :auto-upload="false"
+              :file-list="fileList"
+              accept=".xlsx,.xls"
+              multiple
+              @change="handleFileChange"
+              @remove="handleFileRemove"
             >
-              {{ uploading ? '上传中...' : '开始上传' }}
-            </el-button>
+              <el-icon class="el-icon--upload"><upload-filled /></el-icon>
+              <div class="el-upload__text">
+                将Excel文件拖到此处，或<em>点击上传</em>
+              </div>
+              <template #tip>
+                <div class="el-upload__tip">
+                  支持.xlsx, .xls格式，可同时上传多个文件
+                </div>
+              </template>
+            </el-upload>
+            
+            <div class="upload-controls" v-if="fileList.length">
+              <el-checkbox v-model="overrideExisting">覆盖已存在数据</el-checkbox>
+              <div class="upload-buttons">
+                <el-button @click="clearFiles">清空</el-button>
+                <el-button 
+                  type="primary" 
+                  :loading="uploading"
+                  @click="uploadFiles"
+                >
+                  {{ uploading ? '上传中...' : '开始上传' }}
+                </el-button>
+              </div>
+            </div>
           </div>
-        </div>
-      </div>
-    </el-card>
-    
-    <!-- 分红数据上传区域 -->
-    <el-card class="upload-section" shadow="hover">
-      <template #header>
-        <div class="card-header">
-          <span>批量上传客户分红数据</span>
-          <el-tooltip content="支持Excel文件批量导入客户分红交易记录">
-            <el-icon><QuestionFilled /></el-icon>
-          </el-tooltip>
-        </div>
-      </template>
+        </el-card>
+      </el-col>
       
-      <div class="upload-area">
-        <el-upload
-          ref="dividendUploadRef"
-          class="upload-dragger"
-          drag
-          action=""
-          :auto-upload="false"
-          :file-list="dividendFileList"
-          accept=".xlsx,.xls"
-          multiple
-          @change="handleDividendFileChange"
-          @remove="handleDividendFileRemove"
-        >
-          <el-icon class="el-icon--upload"><upload-filled /></el-icon>
-          <div class="el-upload__text">
-            将分红Excel文件拖到此处，或<em>点击上传</em>
-          </div>
-          <template #tip>
-            <div class="el-upload__tip">
-              支持.xlsx, .xls格式，包含：集团号、产品代码、交易类型、确认金额、确认份额、确认日期
+      <el-col :span="12">
+        <el-card class="upload-section" shadow="hover">
+          <template #header>
+            <div class="card-header">
+              <span>批量上传客户分红数据</span>
+              <el-tooltip content="支持Excel文件批量导入客户分红交易记录">
+                <el-icon><QuestionFilled /></el-icon>
+              </el-tooltip>
             </div>
           </template>
-        </el-upload>
-        
-        <div class="upload-controls" v-if="dividendFileList.length">
-          <el-checkbox v-model="overrideDividendExisting">覆盖已存在数据</el-checkbox>
-          <div class="upload-buttons">
-            <el-button @click="clearDividendFiles">清空</el-button>
-            <el-button 
-              type="success" 
-              :loading="dividendUploading"
-              @click="uploadDividendFiles"
+          
+          <div class="upload-area">
+            <el-upload
+              ref="dividendUploadRef"
+              class="upload-dragger"
+              drag
+              action=""
+              :auto-upload="false"
+              :file-list="dividendFileList"
+              accept=".xlsx,.xls"
+              multiple
+              @change="handleDividendFileChange"
+              @remove="handleDividendFileRemove"
             >
-              {{ dividendUploading ? '上传中...' : '上传分红数据' }}
-            </el-button>
+              <el-icon class="el-icon--upload"><upload-filled /></el-icon>
+              <div class="el-upload__text">
+                将分红Excel文件拖到此处，或<em>点击上传</em>
+              </div>
+              <template #tip>
+                <div class="el-upload__tip">
+                  支持.xlsx, .xls格式，包含：集团号、产品代码、交易类型、确认金额、确认份额、确认日期
+                </div>
+              </template>
+            </el-upload>
+            
+            <div class="upload-controls" v-if="dividendFileList.length">
+              <el-checkbox v-model="overrideDividendExisting">覆盖已存在数据</el-checkbox>
+              <div class="upload-buttons">
+                <el-button @click="clearDividendFiles">清空</el-button>
+                <el-button 
+                  type="success" 
+                  :loading="dividendUploading"
+                  @click="uploadDividendFiles"
+                >
+                  {{ dividendUploading ? '上传中...' : '上传分红数据' }}
+                </el-button>
+              </div>
+            </div>
           </div>
-        </div>
-      </div>
-    </el-card>
+        </el-card>
+      </el-col>
+    </el-row>
     
     <!-- 搜索和筛选 -->
     <el-card class="filter-section">
@@ -201,6 +206,7 @@
             placeholder="排序方式"
             style="width: 100%"
           >
+            <el-option label="按理财师排序" value="domestic_planner" />
             <el-option label="按市值排序" value="total_market_value" />
             <el-option label="按成本排序" value="total_cost" />
             <el-option label="按基金数排序" value="fund_count" />
@@ -218,10 +224,21 @@
       <template #header>
         <div class="table-header">
           <span>客户列表</span>
-          <el-button @click="refreshData" size="small">
-            <el-icon><Refresh /></el-icon>
-            刷新
-          </el-button>
+          <div class="table-actions">
+            <el-button 
+              v-if="selectedRows.length > 0" 
+              type="danger" 
+              size="small"
+              @click="batchDeleteClients"
+            >
+              <el-icon><Delete /></el-icon>
+              批量删除 ({{ selectedRows.length }})
+            </el-button>
+            <el-button @click="refreshData" size="small">
+              <el-icon><Refresh /></el-icon>
+              刷新
+            </el-button>
+          </div>
         </div>
       </template>
       
@@ -232,18 +249,28 @@
         stripe
         border
         @row-click="handleRowClick"
+        @selection-change="handleSelectionChange"
       >
+        <el-table-column 
+          type="selection" 
+          width="55" 
+          fixed="left"
+          :selectable="() => true"
+        />
+        
         <el-table-column
           prop="group_id"
           label="集团号"
           width="120"
           fixed="left"
+          align="center"
         />
         
         <el-table-column
           prop="client_name"
           label="客户姓名(遮蔽)"
-          width="120"
+          min-width="120"
+          align="center"
         >
           <template #default="{ row }">
             <span>{{ row.client_name || '--' }}</span>
@@ -253,7 +280,8 @@
         <el-table-column
           prop="domestic_planner"
           label="理财师"
-          width="120"
+          min-width="120"
+          align="center"
         >
           <template #default="{ row }">
             <span>{{ row.domestic_planner || '--' }}</span>
@@ -263,7 +291,7 @@
         <el-table-column
           prop="fund_count"
           label="基金数量"
-          width="100"
+          min-width="100"
           align="center"
         >
           <template #default="{ row }">
@@ -274,8 +302,8 @@
         <el-table-column
           prop="total_cost"
           label="总成本"
-          width="120"
-          align="right"
+          min-width="120"
+          align="center"
         >
           <template #default="{ row }">
             <span class="money-text">
@@ -287,8 +315,8 @@
         <el-table-column
           prop="total_market_value"
           label="总市值"
-          width="120"
-          align="right"
+          min-width="120"
+          align="center"
         >
           <template #default="{ row }">
             <span class="money-text">
@@ -300,8 +328,8 @@
         <el-table-column
           prop="total_unrealized_pnl"
           label="浮动盈亏"
-          width="120"
-          align="right"
+          min-width="120"
+          align="center"
         >
           <template #default="{ row }">
             <span :class="getPnlClass(row.total_unrealized_pnl)">
@@ -313,8 +341,8 @@
         <el-table-column
           prop="unrealized_pnl_ratio"
           label="盈亏比例"
-          width="100"
-          align="right"
+          min-width="100"
+          align="center"
         >
           <template #default="{ row }">
             <span :class="getPnlClass(row.unrealized_pnl_ratio)">
@@ -326,7 +354,8 @@
         <el-table-column
           prop="latest_update"
           label="最新更新"
-          width="120"
+          min-width="120"
+          align="center"
         >
           <template #default="{ row }">
             <span>{{ formatDate(row.latest_update) }}</span>
@@ -392,6 +421,11 @@ const fileList = ref([])
 const overrideExisting = ref(false)
 const uploadRef = ref()
 
+// 批量选择相关
+const selectedRows = ref([])
+const selectAll = ref(false)
+const isIndeterminate = ref(false)
+
 // 分红数据上传相关
 const dividendFileList = ref([])
 const overrideDividendExisting = ref(false)
@@ -410,7 +444,7 @@ const statistics = reactive({
 const searchForm = reactive({
   search: '',
   planner: '',
-  sortBy: 'total_market_value'
+  sortBy: 'domestic_planner'
 })
 
 // 分页配置
@@ -581,7 +615,7 @@ const resetSearch = () => {
   Object.assign(searchForm, {
     search: '',
     planner: '',
-    sortBy: 'total_market_value'
+    sortBy: 'domestic_planner'
   })
   pagination.page = 1
   loadClientData()
@@ -612,7 +646,50 @@ const refreshData = () => {
   loadClientData()
 }
 
-// 删除客户
+// 选择处理
+const handleSelectionChange = (selection) => {
+  selectedRows.value = selection
+}
+
+// 批量删除客户
+const batchDeleteClients = async () => {
+  if (selectedRows.value.length === 0) {
+    ElMessage.warning('请先选择要删除的客户')
+    return
+  }
+  
+  try {
+    await ElMessageBox.confirm(
+      `确定要删除选中的 ${selectedRows.value.length} 个客户及其所有持仓数据吗？<br/>
+      <strong>此操作不可恢复，请谨慎操作！</strong>`,
+      '批量删除确认',
+      {
+        confirmButtonText: '确定删除',
+        cancelButtonText: '取消',
+        type: 'warning',
+        dangerouslyUseHTMLString: true
+      }
+    )
+    
+    const groupIds = selectedRows.value.map(row => row.group_id)
+    const response = await positionAPI.batchDeleteClients(groupIds)
+    
+    if (response.success) {
+      ElMessage.success(`批量删除成功：成功删除 ${response.deleted_count} 个客户`)
+      selectedRows.value = []
+      refreshData()
+    } else {
+      ElMessage.error(response.message || '批量删除失败')
+    }
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.error('批量删除客户失败:', error)
+      ElMessage.error('批量删除客户失败: ' + (error.message || '网络错误'))
+    }
+  }
+}
+
+// 删除单个客户
 const deleteClient = async (row) => {
   try {
     await ElMessageBox.confirm(
@@ -751,6 +828,12 @@ onMounted(() => {
   align-items: center;
 }
 
+.table-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
 .pagination-wrapper {
   margin-top: 16px;
   display: flex;
@@ -763,12 +846,12 @@ onMounted(() => {
 }
 
 .profit-text {
-  color: #67c23a;
+  color: #f56c6c;
   font-weight: 500;
 }
 
 .loss-text {
-  color: #f56c6c;
+  color: #67c23a;
   font-weight: 500;
 }
 

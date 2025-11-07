@@ -6,7 +6,7 @@ Strategy Management Routes
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status, UploadFile, File
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from typing import List, Optional
 import logging
 import pandas as pd
@@ -184,6 +184,15 @@ async def process_strategy_excel(file_content: bytes, filename: str, db: Session
                 main_strategy = str(row['main_strategy']).strip()
                 sub_strategy = str(row['sub_strategy']).strip()
                 
+                # 处理项目名称字段
+                project_name = None
+                if 'project_name' in row and pd.notna(row['project_name']):
+                    project_name = str(row['project_name']).strip()
+                    if project_name and project_name.lower() not in ['nan', 'none', '']:
+                        pass  # 保留有效的项目名称
+                    else:
+                        project_name = None
+                
                 # 处理是否QD字段
                 is_qd = False
                 if 'is_qd' in row and pd.notna(row['is_qd']):
@@ -222,12 +231,14 @@ async def process_strategy_excel(file_content: bytes, filename: str, db: Session
                     # 更新策略
                     existing_strategy.main_strategy = main_strategy
                     existing_strategy.sub_strategy = sub_strategy
+                    existing_strategy.project_name = project_name
                     existing_strategy.is_qd = is_qd
                     updated_count += 1
                 else:
                     # 创建新策略
                     new_strategy = Strategy(
                         fund_code=fund_code,
+                        project_name=project_name,
                         main_strategy=main_strategy,
                         sub_strategy=sub_strategy,
                         is_qd=is_qd
@@ -548,6 +559,7 @@ async def delete_strategy(
 @router.get("/", response_model=StrategyListResponse, summary="分页策略列表")
 async def get_strategy_list(
     fund_code: Optional[str] = Query(None, description="按基金代码筛选"),
+    fund_name: Optional[str] = Query(None, description="按基金名称模糊筛选"),
     main_strategy: Optional[str] = Query(None, description="按大类策略筛选"),
     page: int = Query(1, ge=1, description="页码，从1开始"),
     page_size: Optional[int] = Query(None, ge=1, le=100, description="每页记录数，默认20条"),
@@ -582,7 +594,15 @@ async def get_strategy_list(
         
         # 应用筛选条件
         if actual_fund_code:
-            query = query.filter(Strategy.fund_code.like(f"%{actual_fund_code}%"))
+            # search参数支持同时搜索基金代码和基金名称
+            query = query.filter(
+                or_(
+                    Strategy.fund_code.like(f"%{actual_fund_code}%"),
+                    Fund.fund_name.like(f"%{actual_fund_code}%")
+                )
+            )
+        if fund_name:
+            query = query.filter(Fund.fund_name.like(f"%{fund_name}%"))
         if actual_main_strategy:
             query = query.filter(Strategy.main_strategy == actual_main_strategy)
         if subStrategy:

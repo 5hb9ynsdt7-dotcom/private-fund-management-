@@ -10,7 +10,6 @@
       highlight-current-row
       @selection-change="handleSelectionChange"
       @sort-change="handleSortChange"
-      @row-dblclick="handleRowDoubleClick"
     >
       <!-- 选择列 -->
       <el-table-column
@@ -260,7 +259,6 @@ const emit = defineEmits([
   'current-change',
   'edit',
   'delete',
-  'row-dblclick'
 ])
 
 const tableRef = ref()
@@ -312,10 +310,6 @@ const handleSortChange = (sortInfo) => {
   emit('sort-change', sortInfo)
 }
 
-// 处理行双击
-const handleRowDoubleClick = (row) => {
-  emit('row-dblclick', row)
-}
 
 // 处理分页大小变化
 const handleSizeChange = (size) => {

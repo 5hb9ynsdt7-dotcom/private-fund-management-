@@ -12,6 +12,12 @@ const routes = [
     meta: { title: '净值管理' }
   },
   {
+    path: '/nav-crawler',
+    name: 'NavCrawler',
+    component: () => import('../views/NavCrawler.vue'),
+    meta: { title: '净值抓取' }
+  },
+  {
     path: '/strategy',
     name: 'StrategyManagement', 
     component: () => import('../views/StrategyManagement.vue'),
@@ -40,6 +46,24 @@ const routes = [
     name: 'TradeDetail',
     component: () => import('../views/TradeDetail.vue'),
     meta: { title: '交易详情' }
+  },
+  {
+    path: '/project-holding',
+    name: 'ProjectHoldingList',
+    component: () => import('../views/ProjectHoldingList.vue'),
+    meta: { title: '项目持仓分析' }
+  },
+  {
+    path: '/project-holding/:projectName',
+    name: 'ProjectHoldingDetail',
+    component: () => import('../views/ProjectHoldingDetail.vue'),
+    meta: { title: '项目持仓详情' }
+  },
+  {
+    path: '/stage-performance',
+    name: 'StagePerformance',
+    component: () => import('../views/StagePerformance.vue'),
+    meta: { title: '阶段涨幅' }
   }
 ]
 

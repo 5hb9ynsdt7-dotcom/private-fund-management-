@@ -4,7 +4,7 @@ Nav Management Routes
 """
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query, status
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import date
@@ -155,6 +155,7 @@ async def create_nav_manual(
 @router.get("/list", response_model=NavListResponse, summary="获取净值列表")
 async def get_nav_list(
     fund_code: Optional[str] = Query(None, description="基金代码筛选"),
+    fund_name: Optional[str] = Query(None, description="基金名称模糊筛选"),
     start_date: Optional[date] = Query(None, description="开始日期"),
     end_date: Optional[date] = Query(None, description="结束日期"),
     page: int = Query(1, ge=1, description="页码"),
@@ -176,6 +177,7 @@ async def get_nav_list(
         nav_service = NavService(db)
         nav_records, total = nav_service.get_nav_list(
             fund_code=fund_code,
+            fund_name=fund_name,
             start_date=start_date,
             end_date=end_date,
             page=page,
@@ -432,4 +434,73 @@ async def get_funds_with_nav(db: Session = Depends(get_db)):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"获取基金列表失败: {str(e)}"
+        )
+
+
+@router.get("/template", summary="下载净值导入模板")
+async def download_nav_template():
+    """
+    下载净值数据导入的Excel模板文件
+    
+    返回一个标准的Excel模板，包含以下列：
+    - fund_name: 基金名称
+    - fund_code: 基金代码  
+    - nav_date: 净值日期
+    - unit_nav: 单位净值
+    - accum_nav: 累计净值
+    """
+    try:
+        import pandas as pd
+        from io import BytesIO
+        
+        # 创建模板数据
+        template_data = {
+            'fund_name': ['示例基金名称'],
+            'fund_code': ['L00001'], 
+            'nav_date': ['2025-01-01'],
+            'unit_nav': [1.0000],
+            'accum_nav': [1.0000]
+        }
+        
+        # 创建DataFrame
+        df = pd.DataFrame(template_data)
+        
+        # 创建Excel文件
+        buffer = BytesIO()
+        with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+            df.to_excel(writer, index=False, sheet_name='净值数据')
+            
+            # 获取工作表进行格式化
+            worksheet = writer.sheets['净值数据']
+            
+            # 设置列宽
+            column_widths = {
+                'A': 20,  # fund_name
+                'B': 15,  # fund_code  
+                'C': 15,  # nav_date
+                'D': 15,  # unit_nav
+                'E': 15   # accum_nav
+            }
+            
+            for column, width in column_widths.items():
+                worksheet.column_dimensions[column].width = width
+        
+        buffer.seek(0)
+        
+        headers = {
+            'Content-Disposition': 'attachment; filename="nav_import_template.xlsx"',
+            'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        }
+        
+        return StreamingResponse(
+            BytesIO(buffer.read()),
+            media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            headers=headers
+        )
+        
+    except Exception as e:
+        logger.error(f"生成模板文件失败: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"生成模板文件失败: {str(e)}"
         )

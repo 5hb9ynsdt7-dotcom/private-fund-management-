@@ -10,7 +10,7 @@
     <el-row :gutter="24" class="action-section">
       <!-- 文件上传 -->
       <el-col :lg="12" :md="24">
-        <el-card title="批量上传" shadow="hover">
+        <el-card title="批量上传" shadow="hover" class="upload-card">
           <template #header>
             <div class="card-header">
               <span>批量上传</span>
@@ -32,7 +32,7 @@
       
       <!-- 手动添加 -->
       <el-col :lg="12" :md="24">
-        <el-card title="手动添加" shadow="hover">
+        <el-card title="手动添加" shadow="hover" class="manual-add-card">
           <template #header>
             <div class="card-header">
               <span>手动添加</span>
@@ -74,9 +74,9 @@
       
       <!-- 筛选工具栏 -->
       <NavFilterBar 
-        v-model:filters="filters"
-        @search="handleSearch"
-        @reset="handleResetFilters"
+        @filter="handleFilter"
+        @reset="handleResetFilter"
+        @show-all="handleShowAllRecords"
       />
       
       <!-- 数据表格 -->
@@ -112,12 +112,7 @@ const tableLoading = ref(false)
 const selectedRows = ref([])
 const tableData = ref([])
 
-// 筛选条件
-const filters = reactive({
-  fundCode: '',
-  navDate: null,
-  dateRange: null
-})
+// 页面状态（恢复正常分页模式）
 
 // 分页配置
 const pagination = reactive({
@@ -172,27 +167,23 @@ const handleAddSuccess = (data) => {
   refreshData()
 }
 
-// 加载净值数据
+// 加载净值数据（只加载第一页，优化性能）
 const loadNavData = async () => {
   tableLoading.value = true
   try {
     const params = {
       page: pagination.currentPage,
       page_size: pagination.pageSize,
-      fund_code: filters.fundCode || '',
       sort_by: sortConfig.prop,
       sort_order: sortConfig.order === 'ascending' ? 'asc' : 'desc'
     }
     
-    // 处理日期范围
-    if (filters.dateRange && filters.dateRange.length === 2) {
-      params.start_date = formatDate(filters.dateRange[0])
-      params.end_date = formatDate(filters.dateRange[1])
-    }
-    
+    console.log('加载净值数据，参数:', params)
     const response = await navAPI.getNavList(params)
     tableData.value = response.nav_records || []
     pagination.total = response.total || 0
+    
+    console.log(`加载完成: 当前页 ${tableData.value.length} 条记录，总计 ${pagination.total} 条`)
   } catch (error) {
     console.error('加载净值数据失败:', error)
     ElMessage.error('加载数据失败')
@@ -209,28 +200,69 @@ const refreshData = () => {
   loadNavData()
 }
 
-// 处理搜索
-const handleSearch = () => {
+// 处理前端筛选
+const handleFilter = (searchTerm) => {
+  console.log('NavManagement - 前端筛选:', searchTerm)
+  // 筛选逻辑已在 NavFilterBar 组件中处理，这里可以记录日志
+}
+
+// 显示特定基金的所有记录
+const handleShowAllRecords = async (searchTerm) => {
+  console.log('NavManagement - 显示所有记录:', searchTerm)
+  
+  tableLoading.value = true
+  try {
+    // 判断搜索词是基金代码还是基金名称
+    const isCodePattern = /^L\d{5}/.test(searchTerm)
+    
+    const params = {
+      page: 1,
+      page_size: 1000, // 使用较大的页面大小
+      sort_by: sortConfig.prop,
+      sort_order: sortConfig.order === 'ascending' ? 'asc' : 'desc'
+    }
+    
+    if (isCodePattern) {
+      params.fund_code = searchTerm
+    } else {
+      params.fund_name = searchTerm
+    }
+    
+    console.log('加载筛选的所有净值数据，参数:', params)
+    const response = await navAPI.getNavList(params)
+    
+    // 更新表格数据，关闭分页
+    tableData.value = response.nav_records || []
+    pagination.total = response.total || 0
+    pagination.currentPage = 1
+    pagination.pageSize = Math.max(50, tableData.value.length) // 设置足够大的页面大小以显示所有记录
+    
+    const filterType = isCodePattern ? '基金代码' : '基金名称'
+    ElMessage.success(`加载完成：共找到 ${tableData.value.length} 条包含"${searchTerm}"的净值记录（按${filterType}筛选）`)
+    console.log(`加载完成: ${searchTerm} 共 ${tableData.value.length} 条记录`)
+    
+  } catch (error) {
+    console.error('加载筛选数据失败:', error)
+    ElMessage.error(`加载包含"${searchTerm}"的数据失败`)
+  } finally {
+    tableLoading.value = false
+  }
+}
+
+// 重置筛选
+const handleResetFilter = () => {
+  console.log('NavManagement - 重置筛选')
+  // 重置为正常分页模式
   pagination.currentPage = 1
+  pagination.pageSize = 20
   loadNavData()
 }
 
-// 重置筛选条件
-const handleResetFilters = () => {
-  Object.assign(filters, {
-    fundCode: '',
-    navDate: null,
-    dateRange: null
-  })
-  pagination.currentPage = 1
-  loadNavData()
-}
-
-// 处理排序变化
+// 处理排序变化（纯前端排序）
 const handleSortChange = ({ prop, order }) => {
   sortConfig.prop = prop
   sortConfig.order = order
-  loadNavData()
+  // Element Plus 表格会自动处理前端排序，无需重新加载数据
 }
 
 // 处理分页大小变化
@@ -371,6 +403,21 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+/* 统一卡片高度 */
+.upload-card,
+.manual-add-card {
+  height: 100%;
+  min-height: 320px;
+}
+
+.upload-card .el-card__body,
+.manual-add-card .el-card__body {
+  height: calc(100% - 60px);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
 }
 
 .table-section {

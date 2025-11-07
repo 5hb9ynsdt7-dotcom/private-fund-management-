@@ -6,7 +6,7 @@ from typing import Dict, List
 import logging
 
 # 导入路由模块
-from .routes import nav, strategy, position, trade, dividend
+from .routes import nav, strategy, position, trade, dividend, transaction, project_holding, stage_performance
 from .database import init_database, get_database_status
 from .init_data import init_data_if_needed
 
@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 app = FastAPI(
     title="Private Fund Management API",
     description="私募基金管理系统后端API",
-    version="1.0.0",
+    version="1.1.0",
     docs_url="/docs",
     redoc_url="/redoc"
 )
@@ -26,7 +26,7 @@ app = FastAPI(
 # 配置CORS中间件，允许前端访问
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=["http://localhost:3002", "http://127.0.0.1:3002", "http://localhost:3001", "http://127.0.0.1:3001", "http://localhost:3000", "http://127.0.0.1:3000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -41,7 +41,7 @@ async def root():
     return {
         "message": "Private Fund Management API",
         "status": "running",
-        "version": "1.0.0",
+        "version": "1.1.0",
         "docs": "/docs"
     }
 
@@ -61,7 +61,7 @@ async def api_info():
     """
     return {
         "api_name": "Private Fund Management",
-        "version": "1.0.0",
+        "version": "1.1.0",
         "description": "私募基金管理系统API",
         "endpoints": {
             "docs": "/docs",
@@ -111,6 +111,9 @@ app.include_router(strategy.router, tags=["策略管理"])
 app.include_router(position.router, tags=["持仓分析"])
 app.include_router(dividend.router, tags=["分红管理"])
 app.include_router(trade.router, tags=["交易分析"])
+app.include_router(transaction.router, tags=["交易分析"])
+app.include_router(project_holding.router, tags=["项目持仓分析"])
+app.include_router(stage_performance.router, tags=["阶段涨幅分析"])
 
 # 应用启动事件
 @app.on_event("startup")

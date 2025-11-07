@@ -4,6 +4,7 @@ Position Analysis Routes
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status, UploadFile, File
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func, desc, and_, or_
 from typing import List, Optional
@@ -12,6 +13,7 @@ from decimal import Decimal
 import logging
 import pandas as pd
 from io import BytesIO
+from pydantic import BaseModel
 
 from ..database import get_db
 from ..schemas.position import (
@@ -26,6 +28,10 @@ from ..services.position_service import PositionAnalysisService
 from ..models import Position, Client, Fund, Nav, DateConverter, ClientDividend, Strategy
 
 logger = logging.getLogger(__name__)
+
+# 批量删除请求模型
+class BatchDeleteRequest(BaseModel):
+    group_ids: List[str]
 
 router = APIRouter(
     prefix="/api/position",
@@ -382,6 +388,11 @@ async def get_client_list(
                 query = query.order_by(desc(func.count(func.distinct(Position.fund_code))))
             else:
                 query = query.order_by(func.count(func.distinct(Position.fund_code)))
+        elif sort_by == "domestic_planner":
+            if sort_order == "desc":
+                query = query.order_by(desc(Client.domestic_planner), Client.group_id)
+            else:
+                query = query.order_by(Client.domestic_planner, Client.group_id)
         else:
             query = query.order_by(Client.group_id)
         
@@ -484,6 +495,7 @@ async def get_client_position_detail(
         total_market_value = Decimal('0')
         total_unrealized_pnl = Decimal('0')
         total_dividends = Decimal('0')
+        total_period_return = Decimal('0')  # 阶段收益汇总
         
         # 策略分布统计
         holding_stats = {}  # fund_code -> market_value
@@ -560,6 +572,7 @@ async def get_client_position_detail(
                 if period_start_nav and period_end_nav:
                     # 阶段收益 = (结束日净值 - 期初净值) × 持仓份额
                     period_return = (period_end_nav - period_start_nav) * position.shares
+                    total_period_return += period_return  # 累加到总阶段收益
             
             # 策略信息
             major_strategy = strategy.main_strategy if strategy else "未分类"
@@ -634,62 +647,52 @@ async def get_client_position_detail(
         
         total_mv = float(total_market_value)
         
-        # 计算今年以来收益
+        # 计算今年以来收益 - 使用与阶段收益完全相同的计算逻辑
         ytd_return = Decimal('0')  # 初始化
         current_year = date.today().year
+        year_start = date(current_year, 1, 1)
+        
+        # 获取今年的最新日期作为结束日期
+        latest_date = max((position.stock_date for position, fund, strategy in position_data), default=None)
+        if not latest_date:
+            latest_date = date.today()
         
         for position, fund, strategy in position_data:
             if not position.shares:
                 continue
-                
-            position_ytd_return = Decimal('0')
             
-            # 获取今年初始净值（期初净值）- 与阶段收益计算逻辑保持一致
-            # 如果首次买入日期在今年内，则使用买入净值作为期初净值
-            # 如果首次买入日期在今年之前，则使用今年1月1日的净值作为期初净值
-            year_start = date(current_year, 1, 1)
+            # 复用阶段收益的计算逻辑，确保一致性
+            # 确定期初净值：如果买入时间在今年内，使用买入净值；否则使用1月1日净值
             first_buy_date = position.first_buy_date or position.stock_date
             
-            if first_buy_date and first_buy_date >= year_start:
-                # 首次买入日期在今年内，使用买入净值作为期初净值
+            if first_buy_date and first_buy_date > year_start:
+                # 买入时间在今年中间，使用买入净值作为期初净值
                 if position.cost_without_fee and position.shares > 0:
-                    initial_nav = position.cost_without_fee / position.shares
+                    period_start_nav = position.cost_without_fee / position.shares
                 else:
                     continue  # 无法计算买入净值，跳过
             else:
-                # 首次买入日期在今年之前，使用今年1月1日净值作为期初净值
-                year_start_nav = db.query(Nav).filter(
+                # 买入时间在今年开始前，获取1月1日净值
+                start_nav_query = db.query(Nav).filter(
                     and_(Nav.fund_code == position.fund_code, Nav.nav_date >= year_start)
-                ).order_by(Nav.nav_date).first()
+                ).order_by(Nav.nav_date)
+                start_nav = start_nav_query.first()
+                period_start_nav = start_nav.unit_nav if start_nav else None
                 
-                if not year_start_nav:
-                    continue  # 没有今年的净值数据，跳过
-                initial_nav = year_start_nav.unit_nav
+                if not period_start_nav:
+                    continue  # 没有净值数据，跳过
             
-            # 获取最新净值
-            latest_nav_record = db.query(Nav).filter(Nav.fund_code == position.fund_code)\
-                                             .order_by(desc(Nav.nav_date)).first()
+            # 获取结束日净值：取≤最新日期的最近净值
+            end_nav_query = db.query(Nav).filter(
+                and_(Nav.fund_code == position.fund_code, Nav.nav_date <= latest_date)
+            ).order_by(desc(Nav.nav_date))
+            end_nav = end_nav_query.first()
+            period_end_nav = end_nav.unit_nav if end_nav else None
             
-            if not latest_nav_record:
-                continue  # 没有净值数据，跳过
-            
-            current_nav_value = latest_nav_record.unit_nav
-            
-            # 计算净值收益 = (最新净值 - 期初净值) × 持仓份额
-            nav_return = (current_nav_value - initial_nav) * position.shares
-            
-            # 获取今年的现金分红
-            cash_dividends = db.query(func.sum(ClientDividend.confirmed_amount))\
-                              .filter(and_(
-                                  ClientDividend.group_id == group_id,
-                                  ClientDividend.fund_code == position.fund_code,
-                                  ClientDividend.transaction_type == '现金红利',
-                                  ClientDividend.confirmed_date >= year_start
-                              )).scalar() or Decimal('0')
-            
-            # 今年以来收益 = 净值收益 + 现金分红
-            position_ytd_return = nav_return + cash_dividends
-            ytd_return += position_ytd_return
+            if period_start_nav and period_end_nav:
+                # YTD收益 = (结束日净值 - 期初净值) × 持仓份额
+                position_ytd_return = (period_end_nav - period_start_nav) * position.shares
+                ytd_return += position_ytd_return
         
         # 收益概览数据
         revenue_overview = {
@@ -700,6 +703,19 @@ async def get_client_position_detail(
             "ytd_return": float(ytd_return),  # 今年以来收益
             "pnl_ratio": float(unrealized_pnl_ratio)
         }
+        
+        # 如果有阶段收益参数，添加阶段收益数据
+        if start_date and end_date:
+            period_return_rate = Decimal('0')
+            if total_cost > 0:
+                period_return_rate = (total_period_return / total_cost) * 100
+            
+            revenue_overview["period_revenue"] = {
+                "amount": float(total_period_return),
+                "rate": float(period_return_rate),
+                "start_date": start_date.strftime('%Y-%m-%d'),
+                "end_date": end_date.strftime('%Y-%m-%d')
+            }
         
         # 按策略分组持仓（用于表格显示）
         strategy_groups = {}
@@ -790,6 +806,132 @@ async def delete_client(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"删除客户失败: {str(e)}"
+        )
+
+
+@router.post("/clients/batch-delete", summary="批量删除客户及其所有持仓")
+async def batch_delete_clients(
+    request: BatchDeleteRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    批量删除客户及其所有持仓数据
+    
+    这将删除所有指定的客户记录和所有相关的持仓数据
+    """
+    try:
+        if not request.group_ids:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="请提供要删除的客户集团号列表"
+            )
+        
+        deleted_count = 0
+        not_found_ids = []
+        total_positions_deleted = 0
+        
+        for group_id in request.group_ids:
+            # 验证客户是否存在
+            client = db.query(Client).filter(Client.group_id == group_id).first()
+            if not client:
+                not_found_ids.append(group_id)
+                continue
+            
+            # 获取持仓数量用于统计
+            position_count = db.query(Position).filter(Position.group_id == group_id).count()
+            total_positions_deleted += position_count
+            
+            # 删除客户（由于外键级联删除，持仓数据也会被删除）
+            db.delete(client)
+            deleted_count += 1
+            
+            logger.info(f"批量删除客户: {group_id}, 同时删除了 {position_count} 条持仓记录")
+        
+        # 提交所有删除操作
+        db.commit()
+        
+        # 构建响应消息
+        success_msg = f"成功删除 {deleted_count} 个客户及其 {total_positions_deleted} 条持仓记录"
+        if not_found_ids:
+            success_msg += f"，未找到的客户: {', '.join(not_found_ids)}"
+        
+        logger.info(f"批量删除客户完成: 成功删除 {deleted_count} 个客户")
+        
+        return {
+            "success": True,
+            "message": success_msg,
+            "data": {
+                "deleted_count": deleted_count,
+                "deleted_positions": total_positions_deleted,
+                "not_found_ids": not_found_ids,
+                "requested_count": len(request.group_ids)
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"批量删除客户失败: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"批量删除客户失败: {str(e)}"
+        )
+
+
+@router.get("/clients/{group_id}/export-image", summary="导出客户持仓详情图片")
+async def export_client_position_image(
+    group_id: str,
+    frontend_url: str = Query("http://localhost:3001", description="前端应用URL"),
+    start_date: Optional[str] = Query(None, description="阶段收益开始日期"),
+    end_date: Optional[str] = Query(None, description="阶段收益结束日期"),
+    db: Session = Depends(get_db)
+):
+    """
+    导出客户持仓详情为PNG图片文件
+    
+    - **group_id**: 客户集团号
+    - **frontend_url**: 前端应用URL，用于生成图片
+    - **返回**: PNG图片文件流，文件名格式：客户名_存量日期.png
+    """
+    try:
+        from ..services.pdf_service import ImageExportService
+        
+        image_service = ImageExportService(db)
+        
+        # 构造包含参数的URL
+        if start_date and end_date:
+            final_url = f"{frontend_url}/position/detail/{group_id}?start_date={start_date}&end_date={end_date}"
+        else:
+            final_url = f"{frontend_url}/position/detail/{group_id}"
+            
+        image_buffer, filename = await image_service.generate_client_position_image(
+            group_id=group_id,
+            frontend_url=final_url
+        )
+        
+        # 返回PNG图片文件流
+        import urllib.parse
+        
+        # 对文件名进行URL编码以支持中文
+        encoded_filename = urllib.parse.quote(filename.encode('utf-8'))
+        
+        return StreamingResponse(
+            iter([image_buffer.getvalue()]),
+            media_type="image/png",
+            headers={
+                "Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}",
+                "Content-Length": str(len(image_buffer.getvalue()))
+            }
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"图片导出失败: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"图片导出失败: {str(e)}"
         )
 
 
@@ -1053,7 +1195,7 @@ async def get_position_statistics(db: Session = Depends(get_db)):
     - **返回**: 总体持仓统计、基金分布、客户分布等信息
     """
     try:
-        from sqlalchemy import func, distinct
+        from sqlalchemy import distinct
         
         # 基础统计
         total_positions = db.query(Position).count()
@@ -1415,3 +1557,37 @@ async def process_client_dividend_excel(file_content: bytes, filename: str, over
             "created_count": 0,
             "errors": errors
         }
+
+
+@router.get("/client/{group_id}/underlying-analysis", response_model=APIResponse, summary="客户底层持仓分析")
+async def analyze_client_underlying_positions(
+    group_id: str,
+    db: Session = Depends(get_db)
+):
+    """
+    分析指定客户持有产品的底层资产配置情况
+    
+    - **group_id**: 客户集团号
+    - **返回**: 底层资产配置分析，包括穿透后的资产类别和行业分布
+    """
+    try:
+        position_service = PositionAnalysisService(db)
+        underlying_analysis = position_service.analyze_underlying_positions(group_id)
+        
+        return APIResponse(
+            success=True,
+            message=f"客户 {group_id} 底层持仓分析完成",
+            data=underlying_analysis
+        )
+        
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e)
+        )
+    except Exception as e:
+        logger.error(f"客户底层持仓分析失败: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"客户底层持仓分析失败: {str(e)}"
+        )

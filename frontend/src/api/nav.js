@@ -96,5 +96,22 @@ export const navAPI = {
         'Content-Type': 'multipart/form-data'
       }
     })
+  },
+
+  // 获取所有基金列表
+  getFunds() {
+    return request.get('/api/nav/funds')
+  },
+
+  // 创建单个净值记录
+  createNavRecord(data) {
+    return request.post('/api/nav/manual', data)
+  },
+
+  // 下载导入模板
+  downloadTemplate() {
+    return request.get('/api/nav/template', {
+      responseType: 'blob'
+    })
   }
 }

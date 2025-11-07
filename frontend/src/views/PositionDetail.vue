@@ -4,7 +4,10 @@
     <div class="page-header">
       <h2>{{ getPageTitle() }}</h2>
       <div class="header-actions">
-        <!-- PDF导出功能暂时移除 -->
+        <el-button @click="exportImage" :loading="imageExporting" type="primary">
+          <el-icon><Download /></el-icon>
+          导出图片
+        </el-button>
         <el-button @click="refreshData" :loading="loading">
           <el-icon><Refresh /></el-icon>
           刷新数据
@@ -108,6 +111,17 @@
       </el-col>
     </el-row>
     
+    <!-- 阶段收益时间段显示 -->
+    <div v-if="periodRange && periodRange.length === 2" class="period-display">
+      <el-alert
+        :title="`阶段收益时间段：${periodRange[0]} 至 ${periodRange[1]}`"
+        type="info"
+        center
+        :closable="false"
+        show-icon
+      />
+    </div>
+    
     <!-- 持仓明细表格 -->
     <el-card class="position-table-card">
       <template #header>
@@ -150,8 +164,8 @@
           :row-class-name="getRowClassName"
           style="width: 100%"
         >
-          <el-table-column prop="fund_name" label="基金名称" min-width="200" show-overflow-tooltip />
-          <el-table-column prop="sub_strategy" label="细分策略" width="90" align="center">
+          <el-table-column prop="fund_name" label="基金名称" width="380" />
+          <el-table-column prop="sub_strategy" label="细分策略" min-width="1" align="center">
             <template #default="{ row }">
               <div v-if="row.rowType === 'data'" class="strategy-cell">
                 <span>{{ row.sub_strategy }}</span>
@@ -160,39 +174,39 @@
               <span v-else>{{ row.sub_strategy }}</span>
             </template>
           </el-table-column>
-          <el-table-column prop="first_buy_date" label="买入日期" width="100" align="center">
+          <el-table-column prop="first_buy_date" label="买入日期" min-width="1" align="center">
             <template #default="{ row }">
               <span v-if="row.rowType === 'data'">{{ formatDate(row.first_buy_date) }}</span>
             </template>
           </el-table-column>
-          <el-table-column prop="cost_with_fee" label="买入金额" width="110" align="center">
+          <el-table-column prop="cost_with_fee" label="买入金额" min-width="1" align="center">
             <template #default="{ row }">
               <span v-if="row.rowType !== 'header'" :class="row.rowType === 'summary' ? 'summary-text' : ''">
                 {{ formatMoney(row.cost_with_fee) }}
               </span>
             </template>
           </el-table-column>
-          <el-table-column prop="shares" label="持仓份额" width="110" align="center">
+          <el-table-column prop="shares" label="持仓份额" min-width="1" align="center">
             <template #default="{ row }">
               <span v-if="row.rowType === 'data'">{{ formatShares(row.shares) }}</span>
             </template>
           </el-table-column>
-          <el-table-column prop="buy_nav" label="买入净值" width="90" align="center">
+          <el-table-column prop="buy_nav" label="买入净值" min-width="1" align="center">
             <template #default="{ row }">
               <span v-if="row.rowType === 'data'">{{ formatNav(row.buy_nav) }}</span>
             </template>
           </el-table-column>
-          <el-table-column prop="latest_nav" label="最新净值" width="90" align="center">
+          <el-table-column prop="latest_nav" label="最新净值" min-width="1" align="center">
             <template #default="{ row }">
               <span v-if="row.rowType === 'data'">{{ formatNav(row.latest_nav) }}</span>
             </template>
           </el-table-column>
-          <el-table-column prop="latest_nav_date" label="净值日期" width="100" align="center">
+          <el-table-column prop="latest_nav_date" label="净值日期" min-width="1" align="center">
             <template #default="{ row }">
               <span v-if="row.rowType === 'data'">{{ formatDate(row.latest_nav_date) }}</span>
             </template>
           </el-table-column>
-          <el-table-column prop="holding_return" label="持有收益" width="110" align="center">
+          <el-table-column prop="holding_return" label="持有收益" min-width="1" align="center">
             <template #default="{ row }">
               <span v-if="row.rowType !== 'header'" 
                     :class="[getPnlClass(row.holding_return), row.rowType === 'summary' ? 'summary-text' : '']">
@@ -200,7 +214,7 @@
               </span>
             </template>
           </el-table-column>
-          <el-table-column prop="holding_return_rate" label="持有收益率" width="100" align="center">
+          <el-table-column prop="holding_return_rate" label="持有收益率" min-width="1" align="center">
             <template #default="{ row }">
               <span v-if="row.rowType !== 'header'" 
                     :class="[getPnlClass(row.holding_return_rate), row.rowType === 'summary' ? 'summary-text' : '']">
@@ -208,7 +222,7 @@
               </span>
             </template>
           </el-table-column>
-          <el-table-column prop="period_return" label="阶段收益" width="110" align="center">
+          <el-table-column prop="period_return" label="阶段收益" min-width="1" align="center">
             <template #default="{ row }">
               <span v-if="row.rowType !== 'header'" 
                     :class="[getPnlClass(row.period_return), row.rowType === 'summary' || row.rowType === 'total' ? 'summary-text' : '']">
@@ -228,9 +242,9 @@
         class="position-table"
         style="width: 100%"
       >
-        <el-table-column prop="fund_name" label="基金名称" min-width="180" show-overflow-tooltip />
-        <el-table-column prop="major_strategy" label="大类策略" width="90" align="center" />
-        <el-table-column prop="sub_strategy" label="细分策略" width="90" align="center">
+        <el-table-column prop="fund_name" label="基金名称" width="380" />
+        <el-table-column prop="major_strategy" label="大类策略" min-width="1" align="center" />
+        <el-table-column prop="sub_strategy" label="细分策略" min-width="1" align="center">
           <template #default="{ row }">
             <div class="strategy-cell">
               <span>{{ row.sub_strategy }}</span>
@@ -238,51 +252,51 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column prop="first_buy_date" label="买入日期" width="100" align="center">
+        <el-table-column prop="first_buy_date" label="买入日期" min-width="1" align="center">
           <template #default="{ row }">
             {{ formatDate(row.first_buy_date) }}
           </template>
         </el-table-column>
-        <el-table-column prop="cost_with_fee" label="买入金额" width="110" align="center">
+        <el-table-column prop="cost_with_fee" label="买入金额" min-width="1" align="center">
           <template #default="{ row }">
             {{ formatMoney(row.cost_with_fee) }}
           </template>
         </el-table-column>
-        <el-table-column prop="shares" label="持仓份额" width="110" align="center">
+        <el-table-column prop="shares" label="持仓份额" min-width="1" align="center">
           <template #default="{ row }">
             {{ formatShares(row.shares) }}
           </template>
         </el-table-column>
-        <el-table-column prop="buy_nav" label="买入净值" width="90" align="center">
+        <el-table-column prop="buy_nav" label="买入净值" min-width="1" align="center">
           <template #default="{ row }">
             {{ formatNav(row.buy_nav) }}
           </template>
         </el-table-column>
-        <el-table-column prop="latest_nav" label="最新净值" width="90" align="center">
+        <el-table-column prop="latest_nav" label="最新净值" min-width="1" align="center">
           <template #default="{ row }">
             {{ formatNav(row.latest_nav) }}
           </template>
         </el-table-column>
-        <el-table-column prop="latest_nav_date" label="净值日期" width="100" align="center">
+        <el-table-column prop="latest_nav_date" label="净值日期" min-width="1" align="center">
           <template #default="{ row }">
             {{ formatDate(row.latest_nav_date) }}
           </template>
         </el-table-column>
-        <el-table-column prop="holding_return" label="持有收益" width="110" align="center">
+        <el-table-column prop="holding_return" label="持有收益" min-width="1" align="center">
           <template #default="{ row }">
             <span :class="getPnlClass(row.holding_return)">
               {{ formatMoney(row.holding_return) }}
             </span>
           </template>
         </el-table-column>
-        <el-table-column prop="holding_return_rate" label="持有收益率" width="100" align="center">
+        <el-table-column prop="holding_return_rate" label="持有收益率" min-width="1" align="center">
           <template #default="{ row }">
             <span :class="getPnlClass(row.holding_return_rate)">
               {{ formatPercent(row.holding_return_rate) }}
             </span>
           </template>
         </el-table-column>
-        <el-table-column prop="period_return" label="阶段收益" width="110" align="center">
+        <el-table-column prop="period_return" label="阶段收益" min-width="1" align="center">
           <template #default="{ row }">
             <span :class="getPnlClass(row.period_return)">
               {{ row.period_return !== null ? formatMoney(row.period_return) : '--' }}
@@ -291,6 +305,9 @@
         </el-table-column>
       </el-table>
     </el-card>
+    
+    <!-- 底层持仓分析 -->
+    <UnderlyingPositionAnalysis :group-id="route.params.groupId" />
   </div>
 </template>
 
@@ -301,6 +318,7 @@ import { ElMessage } from 'element-plus'
 import { Download } from '@element-plus/icons-vue'
 import { positionAPI } from '@/api/position'
 import * as echarts from 'echarts'
+import UnderlyingPositionAnalysis from '@/components/UnderlyingPositionAnalysis.vue'
 // PDF导出功能暂时移除
 
 const route = useRoute()
@@ -310,7 +328,7 @@ const router = useRouter()
 const loading = ref(false)
 const sortBy = ref('strategy')
 const periodRange = ref(null)
-// const pdfExporting = ref(false) // PDF功能暂时移除
+const imageExporting = ref(false)
 const positionData = ref({
   client_info: {},
   positions: [],
@@ -666,7 +684,61 @@ const goBack = () => {
   router.push('/position')
 }
 
-// PDF导出功能已暂时移除
+// 图片导出功能
+const exportImage = async () => {
+  const groupId = route.params.groupId
+  if (!groupId) {
+    ElMessage.error('客户ID不能为空')
+    return
+  }
+  
+  imageExporting.value = true
+  try {
+    // 获取阶段收益参数
+    const startDate = periodRange.value ? periodRange.value[0] : null
+    const endDate = periodRange.value ? periodRange.value[1] : null
+    
+    // 调用API，分别传递参数
+    const response = await positionAPI.exportClientPositionImage(
+      groupId, 
+      'http://localhost:3001', 
+      startDate, 
+      endDate
+    )
+    
+    // 创建下载链接
+    const blob = new Blob([response], { type: 'image/png' })
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    
+    // 生成文件名：客户名_存量日期_阶段收益.png
+    const clientName = positionData.value.client_info?.client_name || '客户'
+    const latestUpdate = positionData.value.client_info?.latest_update || new Date().toISOString().split('T')[0]
+    let filename = `${clientName.split('*')[0]}_${latestUpdate}`
+    
+    // 如果选择了阶段收益，添加到文件名中
+    if (startDate && endDate) {
+      filename += `_${startDate}至${endDate}`
+    }
+    filename += '.png'
+    
+    link.href = url
+    link.download = filename
+    document.body.appendChild(link)
+    link.click()
+    
+    // 清理
+    window.URL.revokeObjectURL(url)
+    document.body.removeChild(link)
+    
+    ElMessage.success('图片导出成功')
+  } catch (error) {
+    console.error('图片导出失败:', error)
+    ElMessage.error('图片导出失败: ' + (error.message || '网络错误'))
+  } finally {
+    imageExporting.value = false
+  }
+}
 
 // 格式化函数
 const formatMoney = (amount) => {
@@ -718,6 +790,16 @@ const getPnlClass = (value) => {
 
 // 生命周期
 onMounted(() => {
+  // 检查URL参数并初始化阶段收益选择器
+  const urlParams = new URLSearchParams(window.location.search)
+  const startDate = urlParams.get('start_date')
+  const endDate = urlParams.get('end_date')
+  
+  if (startDate && endDate) {
+    periodRange.value = [startDate, endDate]
+    console.log('从URL参数初始化阶段收益:', startDate, '至', endDate)
+  }
+  
   loadPositionDetail()
 })
 </script>
@@ -800,6 +882,9 @@ onMounted(() => {
   font-size: 14px;
   color: #606266;
   white-space: nowrap;
+}
+.period-display {
+  margin: 16px 0 24px 0;
 }
 
 .strategy-group {
