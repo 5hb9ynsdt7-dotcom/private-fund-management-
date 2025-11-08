@@ -3,7 +3,9 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 
 // 创建axios实例
 const request = axios.create({
-  baseURL: 'http://localhost:8000',
+  baseURL: process.env.NODE_ENV === 'production' 
+    ? window.location.origin  // 生产环境使用当前域名
+    : 'http://localhost:8000', // 开发环境使用localhost
   timeout: 30000,
   headers: {
     'Content-Type': 'application/json'
