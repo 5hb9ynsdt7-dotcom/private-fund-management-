@@ -1,6 +1,7 @@
 {
   "name": "privatefund-frontend",
   "version": "1.1.0",
+  "type": "module",
   "description": "Private Fund Management System Frontend",
   "main": "index.js",
   "scripts": {
