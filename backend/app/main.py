@@ -41,7 +41,8 @@ async def root():
     根路径 - 返回前端页面或API状态信息
     """
     # 如果有前端构建文件，返回前端页面
-    static_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend", "dist")
+    # 在Docker容器中，前端构建文件在 /app/frontend/dist
+    static_dir = "/app/frontend/dist"
     index_path = os.path.join(static_dir, "index.html")
     if os.path.exists(index_path):
         from fastapi.responses import FileResponse
@@ -126,7 +127,8 @@ app.include_router(project_holding.router, tags=["项目持仓分析"])
 app.include_router(stage_performance.router, tags=["阶段涨幅分析"])
 
 # 配置静态文件服务 (用于生产环境)
-static_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend", "dist")
+# 在Docker容器中，前端构建文件在 /app/frontend/dist
+static_dir = "/app/frontend/dist"
 if os.path.exists(static_dir):
     app.mount("/static", StaticFiles(directory=static_dir), name="static")
     
