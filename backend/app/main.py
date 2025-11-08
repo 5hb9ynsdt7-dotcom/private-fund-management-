@@ -1,9 +1,11 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 import uvicorn
 from typing import Dict, List
 import logging
+import os
 
 # 导入路由模块
 from .routes import nav, strategy, position, trade, dividend, transaction, project_holding, stage_performance
@@ -32,15 +34,23 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 根路由 - 健康检查
+# 根路由 - 健康检查或前端
 @app.get("/")
 async def root():
     """
-    根路径 - 返回API状态信息
+    根路径 - 返回前端页面或API状态信息
     """
+    # 如果有前端构建文件，返回前端页面
+    static_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend", "dist")
+    index_path = os.path.join(static_dir, "index.html")
+    if os.path.exists(index_path):
+        from fastapi.responses import FileResponse
+        return FileResponse(index_path)
+    
+    # 否则返回API状态信息
     return {
         "message": "Private Fund Management API",
-        "status": "running",
+        "status": "running", 
         "version": "1.1.0",
         "docs": "/docs"
     }
@@ -114,6 +124,33 @@ app.include_router(trade.router, tags=["交易分析"])
 app.include_router(transaction.router, tags=["交易分析"])
 app.include_router(project_holding.router, tags=["项目持仓分析"])
 app.include_router(stage_performance.router, tags=["阶段涨幅分析"])
+
+# 配置静态文件服务 (用于生产环境)
+static_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend", "dist")
+if os.path.exists(static_dir):
+    app.mount("/static", StaticFiles(directory=static_dir), name="static")
+    
+    # 添加前端路由支持
+    @app.get("/{full_path:path}")
+    async def serve_spa(full_path: str):
+        """服务前端单页应用"""
+        # API路径直接返回404
+        if full_path.startswith("api/") or full_path.startswith("docs") or full_path.startswith("redoc"):
+            raise HTTPException(status_code=404, detail="Not found")
+        
+        # 检查是否为静态文件
+        file_path = os.path.join(static_dir, full_path)
+        if os.path.isfile(file_path):
+            from fastapi.responses import FileResponse
+            return FileResponse(file_path)
+        
+        # 对于其他路径，返回index.html (SPA路由)
+        index_path = os.path.join(static_dir, "index.html")
+        if os.path.exists(index_path):
+            from fastapi.responses import FileResponse
+            return FileResponse(index_path)
+        
+        raise HTTPException(status_code=404, detail="Not found")
 
 # 应用启动事件
 @app.on_event("startup")
