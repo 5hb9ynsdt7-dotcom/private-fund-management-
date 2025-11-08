@@ -27,6 +27,7 @@ backend/venv/
 backend/backend_venv/
 backend/.env
 backend/*.db
+!backend/app/privatefund_dev.db
 backend/uploads/
 backend/logs/
 

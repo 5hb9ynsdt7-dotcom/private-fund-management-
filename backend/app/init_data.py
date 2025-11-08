@@ -14,12 +14,12 @@ logger = logging.getLogger(__name__)
 
 
 def init_sample_data(db: Session):
-    """初始化示例数据"""
+    """初始化示例数据（仅在没有真实数据时使用）"""
     
     # 检查是否已有数据
     existing_funds = db.query(Fund).count()
     if existing_funds > 0:
-        logger.info(f"数据库已有 {existing_funds} 个基金，跳过初始化")
+        logger.info(f"发现真实数据：数据库已有 {existing_funds} 个基金，跳过初始化示例数据")
         return
     
     # 示例基金数据

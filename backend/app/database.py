@@ -23,6 +23,9 @@ class DatabaseConfig:
     # 开发环境 - SQLite
     SQLITE_DEV_URL = "sqlite:///./privatefund_dev.db"
     
+    # Docker环境 - SQLite
+    SQLITE_DOCKER_URL = "sqlite:////app/backend/app/privatefund_dev.db"
+    
     # 生产环境 - MySQL
     MYSQL_PROD_URL = "mysql+pymysql://{user}:{password}@{host}:{port}/{database}?charset=utf8mb4"
     
@@ -43,6 +46,9 @@ class DatabaseConfig:
                 "database": os.getenv("DB_DATABASE", "privatefund")
             }
             return cls.MYSQL_PROD_URL.format(**mysql_config)
+        elif env == "docker" or os.path.exists("/app/backend/app/privatefund_dev.db"):
+            # Docker环境或Railway部署环境，使用预置的真实数据库
+            return cls.SQLITE_DOCKER_URL
         else:
             # 开发环境使用SQLite
             return cls.SQLITE_DEV_URL
