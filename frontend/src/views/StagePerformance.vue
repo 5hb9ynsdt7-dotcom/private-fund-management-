@@ -122,7 +122,22 @@
             <el-option label="持平" value="neutral" />
           </el-select>
         </el-col>
-        <el-col :span="6">
+        <el-col :span="8">
+          <el-date-picker
+            v-model="dateRange"
+            type="daterange"
+            range-separator="至"
+            start-placeholder="开始日期"
+            end-placeholder="结束日期"
+            style="width: 100%"
+            format="MM/DD"
+            value-format="YYYY-MM-DD"
+            :shortcuts="dateShortcuts"
+            @change="onDateRangeChange"
+            clearable
+          />
+        </el-col>
+        <el-col :span="4">
           <el-button type="primary" @click="loadData">搜索</el-button>
           <el-button @click="resetSearch">重置</el-button>
           <el-button 
@@ -238,8 +253,8 @@
         
         <el-table-column
           prop="weekly_return"
-          label="近一周涨跌幅"
-          width="140"
+          :label="`${selectedPeriodDisplay}涨跌幅`"
+          width="160"
           align="center"
           sortable
         >
@@ -331,6 +346,50 @@ const searchForm = reactive({
   performanceFilter: ''
 })
 
+// 日期范围选择
+const dateRange = ref([])
+const selectedPeriodDisplay = ref('近一周')
+
+// 日期快捷选项
+const dateShortcuts = [
+  {
+    text: '近一周',
+    value: () => {
+      const end = new Date()
+      const start = new Date()
+      start.setTime(start.getTime() - 3600 * 1000 * 24 * 7)
+      return [start, end]
+    }
+  },
+  {
+    text: '近两周',
+    value: () => {
+      const end = new Date()
+      const start = new Date()
+      start.setTime(start.getTime() - 3600 * 1000 * 24 * 14)
+      return [start, end]
+    }
+  },
+  {
+    text: '近一个月',
+    value: () => {
+      const end = new Date()
+      const start = new Date()
+      start.setTime(start.getTime() - 3600 * 1000 * 24 * 30)
+      return [start, end]
+    }
+  },
+  {
+    text: '近三个月',
+    value: () => {
+      const end = new Date()
+      const start = new Date()
+      start.setTime(start.getTime() - 3600 * 1000 * 24 * 90)
+      return [start, end]
+    }
+  }
+]
+
 // 分页配置
 const pagination = reactive({
   page: 1,
@@ -418,17 +477,63 @@ const displayData = computed(() => {
 const loadData = async () => {
   tableLoading.value = true
   try {
-    // 构建查询参数
-    const params = {
-      search: searchForm.search || undefined,
-      major_strategy: searchForm.majorStrategy || undefined,
-      sub_strategy: searchForm.subStrategy || undefined,
-      performance_filter: searchForm.performanceFilter || undefined,
-      days_limit: 7
-    }
+    let response
     
-    // 调用后端API获取阶段涨幅数据
-    const response = await stagePerformanceAPI.getWeeklyPerformance(params)
+    if (dateRange.value && dateRange.value.length === 2) {
+      // 使用自定义时间范围
+      const params = {
+        start_date: dateRange.value[0],
+        end_date: dateRange.value[1],
+        search: searchForm.search || undefined,
+        major_strategy: searchForm.majorStrategy || undefined,
+        sub_strategy: searchForm.subStrategy || undefined
+      }
+      
+      response = await stagePerformanceAPI.getPeriodPerformance(params)
+      
+      // 处理自定义期间返回的数据格式
+      if (response.success && response.data && response.data.products) {
+        const mappedData = response.data.products.map(item => ({
+          fund_code: item.fund_code,
+          fund_name: item.fund_name,
+          major_strategy: item.major_strategy,
+          sub_strategy: item.sub_strategy,
+          latest_nav_date: item.end_nav_date,
+          latest_nav: item.end_nav,
+          previous_nav_date: item.start_nav_date,
+          previous_nav: item.start_nav,
+          weekly_return: item.period_return,
+          ytd_return: item.ytd_return // 使用后端计算的今年以来收益
+        }))
+        
+        response.data = mappedData
+        
+        // 计算统计信息
+        const totalProducts = mappedData.length
+        const risingProducts = mappedData.filter(item => item.weekly_return > 0).length
+        const fallingProducts = mappedData.filter(item => item.weekly_return < 0).length
+        const validReturns = mappedData.map(item => item.weekly_return).filter(r => r !== null)
+        const avgReturn = validReturns.length > 0 ? validReturns.reduce((a, b) => a + b, 0) / validReturns.length : 0
+        
+        response.statistics = {
+          total_products: totalProducts,
+          rising_products: risingProducts,
+          falling_products: fallingProducts,
+          avg_return: avgReturn
+        }
+      }
+    } else {
+      // 使用默认近一周数据
+      const params = {
+        search: searchForm.search || undefined,
+        major_strategy: searchForm.majorStrategy || undefined,
+        sub_strategy: searchForm.subStrategy || undefined,
+        performance_filter: searchForm.performanceFilter || undefined,
+        days_limit: 7
+      }
+      
+      response = await stagePerformanceAPI.getWeeklyPerformance(params)
+    }
     
     if (response.success) {
       tableData.value = response.data || []
@@ -552,7 +657,7 @@ const downloadSelectedData = async () => {
             <th style="border: 1px solid #dcdfe6; padding: 12px 8px; text-align: center;">细分策略</th>
             <th style="border: 1px solid #dcdfe6; padding: 12px 8px; text-align: center;">最新净值日期</th>
             <th style="border: 1px solid #dcdfe6; padding: 12px 8px; text-align: center;">最新净值</th>
-            <th style="border: 1px solid #dcdfe6; padding: 12px 8px; text-align: center;">近一周涨跌幅</th>
+            <th style="border: 1px solid #dcdfe6; padding: 12px 8px; text-align: center;">${selectedPeriodDisplay.value}涨跌幅</th>
             <th style="border: 1px solid #dcdfe6; padding: 12px 8px; text-align: center;">今年以来涨跌幅</th>
           </tr>
         </thead>
@@ -615,6 +720,28 @@ const downloadSelectedData = async () => {
   }
 }
 
+// 日期范围变化处理
+const onDateRangeChange = (dates) => {
+  if (dates && dates.length === 2) {
+    const startDate = new Date(dates[0])
+    const endDate = new Date(dates[1])
+    
+    // 格式化显示日期（MM/DD格式）
+    const formatDate = (date) => {
+      const month = (date.getMonth() + 1).toString().padStart(2, '0')
+      const day = date.getDate().toString().padStart(2, '0')
+      return `${month}${day}`
+    }
+    
+    selectedPeriodDisplay.value = `${formatDate(startDate)}-${formatDate(endDate)}`
+  } else {
+    selectedPeriodDisplay.value = '近一周'
+  }
+  
+  // 重新加载数据
+  loadData()
+}
+
 // 搜索处理
 const resetSearch = () => {
   Object.assign(searchForm, {
@@ -623,8 +750,11 @@ const resetSearch = () => {
     subStrategy: '',
     performanceFilter: ''
   })
+  dateRange.value = []
+  selectedPeriodDisplay.value = '近一周'
   pagination.page = 1
   updateStatistics()
+  loadData()
 }
 
 // 分页处理

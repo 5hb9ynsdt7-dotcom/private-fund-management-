@@ -8,7 +8,7 @@ import logging
 import os
 
 # 导入路由模块
-from .routes import nav, strategy, position, trade, dividend, transaction, project_holding, stage_performance
+from .routes import nav, strategy, position, trade, dividend, transaction, project_holding, stage_performance, nav_crawler, product_analysis, fund
 from .database import init_database, get_database_status
 from .init_data import init_data_if_needed
 
@@ -123,7 +123,10 @@ async def global_exception_handler(request, exc):
 
 # 注册路由
 app.include_router(nav.router, tags=["净值管理"])
+app.include_router(nav_crawler.router, tags=["净值抓取"])
+app.include_router(fund.router, tags=["基金管理"])
 app.include_router(strategy.router, tags=["策略管理"])
+app.include_router(product_analysis.router, tags=["产品分析"])
 app.include_router(position.router, tags=["持仓分析"])
 app.include_router(dividend.router, tags=["分红管理"])
 app.include_router(trade.router, tags=["交易分析"])

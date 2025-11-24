@@ -32,7 +32,12 @@
             <el-icon><Setting /></el-icon>
             <span>策略管理</span>
           </el-menu-item>
-          
+
+          <el-menu-item index="/product-analysis">
+            <el-icon><DataAnalysis /></el-icon>
+            <span>产品分析</span>
+          </el-menu-item>
+
           <el-menu-item index="/position">
             <el-icon><PieChart /></el-icon>
             <span>持仓分析</span>
@@ -51,6 +56,11 @@
           <el-menu-item index="/stage-performance">
             <el-icon><TrendCharts /></el-icon>
             <span>阶段涨幅</span>
+          </el-menu-item>
+          
+          <el-menu-item index="/public-fund">
+            <el-icon><Money /></el-icon>
+            <span>公募基金</span>
           </el-menu-item>
         </el-menu>
       </el-aside>

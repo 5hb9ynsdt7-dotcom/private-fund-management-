@@ -21,7 +21,8 @@ class Fund(Base):
 
     fund_code = Column(String(20), primary_key=True, comment='基金代码，如L03126')
     fund_name = Column(String(100), nullable=False, comment='基金全名')
-    
+    noah_product_id = Column(String(50), comment='诺亚CRM系统产品ID，用于净值抓取')
+
     # 建立与其他表的关系
     strategy = relationship("Strategy", back_populates="fund", cascade="all, delete-orphan", uselist=False)
     nav_records = relationship("Nav", back_populates="fund", cascade="all, delete-orphan")

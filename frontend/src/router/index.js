@@ -19,9 +19,15 @@ const routes = [
   },
   {
     path: '/strategy',
-    name: 'StrategyManagement', 
+    name: 'StrategyManagement',
     component: () => import('../views/StrategyManagement.vue'),
     meta: { title: '策略管理' }
+  },
+  {
+    path: '/product-analysis',
+    name: 'ProductAnalysis',
+    component: () => import('../views/ProductAnalysis.vue'),
+    meta: { title: '产品分析' }
   },
   {
     path: '/position',
@@ -64,6 +70,12 @@ const routes = [
     name: 'StagePerformance',
     component: () => import('../views/StagePerformance.vue'),
     meta: { title: '阶段涨幅' }
+  },
+  {
+    path: '/public-fund',
+    name: 'PublicFund',
+    component: () => import('../views/PublicFund.vue'),
+    meta: { title: '公募基金' }
   }
 ]
 
