@@ -35,7 +35,10 @@ class DatabaseConfig:
         根据环境变量获取数据库连接URL
         """
         env = os.getenv("ENVIRONMENT", "development")
-        
+        railway_env = os.getenv("RAILWAY_ENVIRONMENT")  # Railway特定环境变量
+
+        logger.info(f"检测环境: ENVIRONMENT={env}, RAILWAY_ENVIRONMENT={railway_env}")
+
         if env == "production":
             # 生产环境使用MySQL
             mysql_config = {
@@ -46,11 +49,13 @@ class DatabaseConfig:
                 "database": os.getenv("DB_DATABASE", "privatefund")
             }
             return cls.MYSQL_PROD_URL.format(**mysql_config)
-        elif env == "docker" or os.path.exists("/app/backend/app/privatefund_dev.db"):
-            # Docker环境或Railway部署环境，使用预置的真实数据库
+        elif railway_env or env == "docker" or os.path.exists("/app/backend/app/privatefund_dev.db"):
+            # Railway环境、Docker环境或文件存在时，使用预置的真实数据库
+            logger.info(f"使用Docker数据库路径: {cls.SQLITE_DOCKER_URL}")
             return cls.SQLITE_DOCKER_URL
         else:
             # 开发环境使用SQLite
+            logger.info(f"使用开发数据库路径: {cls.SQLITE_DEV_URL}")
             return cls.SQLITE_DEV_URL
 
 

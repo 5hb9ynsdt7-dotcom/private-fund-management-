@@ -6,6 +6,7 @@ import uvicorn
 from typing import Dict, List
 import logging
 import os
+from datetime import datetime
 
 # 导入路由模块
 from .routes import nav, strategy, position, trade, dividend, transaction, project_holding, stage_performance, nav_crawler, product_analysis, fund
@@ -61,13 +62,33 @@ async def root():
         "docs": "/docs"
     }
 
-# 健康检查路由
+# 应用初始化状态
+app_state = {
+    "initialized": False,
+    "db_ready": False,
+    "startup_error": None
+}
+
+# 健康检查路由 - 始终快速响应，不依赖数据库初始化
 @app.get("/health")
 async def health_check():
     """
-    健康检查端点
+    健康检查端点 - Railway部署用
     """
-    return {"status": "healthy", "message": "API服务正常运行"}
+    return {"status": "healthy", "message": "API服务正常运行", "timestamp": str(datetime.now())}
+
+# 就绪检查路由 - 检查数据库等依赖是否就绪
+@app.get("/ready")
+async def readiness_check():
+    """
+    就绪检查端点 - 检查应用是否完全初始化
+    """
+    return {
+        "initialized": app_state["initialized"],
+        "db_ready": app_state["db_ready"],
+        "startup_error": app_state["startup_error"],
+        "timestamp": str(datetime.now())
+    }
 
 # API信息路由
 @app.get("/api/info")
@@ -166,21 +187,31 @@ if os.path.exists(static_dir):
 @app.on_event("startup")
 async def startup_event():
     """
-    应用启动时执行
+    应用启动时执行 - 非阻塞式初始化
     """
-    logger.info("Private Fund Management API 启动成功")
+    logger.info("Private Fund Management API 正在启动...")
     logger.info("API文档地址: http://localhost:8000/docs")
-    
-    # 初始化数据库
+
+    # 初始化数据库 - 不阻塞应用启动
     try:
+        logger.info("开始初始化数据库...")
         init_database()
+        app_state["db_ready"] = True
         logger.info("数据库初始化成功")
-        
+
         # 初始化示例数据
         init_data_if_needed()
         logger.info("示例数据初始化完成")
+
+        app_state["initialized"] = True
+        logger.info("Private Fund Management API 启动完成")
     except Exception as e:
-        logger.error(f"数据库初始化失败: {str(e)}")
+        error_msg = f"数据库初始化失败: {str(e)}"
+        logger.error(error_msg)
+        app_state["startup_error"] = error_msg
+        app_state["db_ready"] = False
+        # 不抛出异常，让应用继续运行（health check可以响应）
+        logger.warning("应用将继续运行，但数据库功能可能不可用")
 
 # 应用关闭事件
 @app.on_event("shutdown")
