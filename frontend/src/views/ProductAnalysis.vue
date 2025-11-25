@@ -84,7 +84,7 @@
       <el-col :span="4">
         <el-card class="stat-card">
           <el-statistic
-            title="波动率"
+            title="年化波动率"
             :value="analysisData.basic_metrics.volatility"
             :precision="2"
             suffix="%"
@@ -183,6 +183,160 @@
       </el-col>
     </el-row>
 
+    <!-- 年度月度收益表 -->
+    <el-row :gutter="24" v-if="analysisData">
+      <el-col :span="24">
+        <el-card>
+          <template #header>
+            <div class="card-header">
+              <span>年度月度收益明细</span>
+            </div>
+          </template>
+          <el-table :data="analysisData.monthly_returns.yearly_table" border stripe style="width: 100%">
+            <el-table-column prop="year" label="年份" align="center" fixed />
+            <el-table-column label="1月" align="center">
+              <template #default="scope">
+                <span v-if="scope.row.month_1 !== null"
+                      class="percent-text"
+                      :style="`color: ${scope.row.month_1 >= 0 ? '#f56c6c' : '#67c23a'}`">
+                  {{ scope.row.month_1 >= 0 ? '+' : '' }}{{ scope.row.month_1 }}%
+                </span>
+                <span v-else style="color: #d1d5db">-</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="2月" align="center">
+              <template #default="scope">
+                <span v-if="scope.row.month_2 !== null"
+                      class="percent-text"
+                      :style="`color: ${scope.row.month_2 >= 0 ? '#f56c6c' : '#67c23a'}`">
+                  {{ scope.row.month_2 >= 0 ? '+' : '' }}{{ scope.row.month_2 }}%
+                </span>
+                <span v-else style="color: #d1d5db">-</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="3月" align="center">
+              <template #default="scope">
+                <span v-if="scope.row.month_3 !== null"
+                      class="percent-text"
+                      :style="`color: ${scope.row.month_3 >= 0 ? '#f56c6c' : '#67c23a'}`">
+                  {{ scope.row.month_3 >= 0 ? '+' : '' }}{{ scope.row.month_3 }}%
+                </span>
+                <span v-else style="color: #d1d5db">-</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="4月" align="center">
+              <template #default="scope">
+                <span v-if="scope.row.month_4 !== null"
+                      class="percent-text"
+                      :style="`color: ${scope.row.month_4 >= 0 ? '#f56c6c' : '#67c23a'}`">
+                  {{ scope.row.month_4 >= 0 ? '+' : '' }}{{ scope.row.month_4 }}%
+                </span>
+                <span v-else style="color: #d1d5db">-</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="5月" align="center">
+              <template #default="scope">
+                <span v-if="scope.row.month_5 !== null"
+                      class="percent-text"
+                      :style="`color: ${scope.row.month_5 >= 0 ? '#f56c6c' : '#67c23a'}`">
+                  {{ scope.row.month_5 >= 0 ? '+' : '' }}{{ scope.row.month_5 }}%
+                </span>
+                <span v-else style="color: #d1d5db">-</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="6月" align="center">
+              <template #default="scope">
+                <span v-if="scope.row.month_6 !== null"
+                      class="percent-text"
+                      :style="`color: ${scope.row.month_6 >= 0 ? '#f56c6c' : '#67c23a'}`">
+                  {{ scope.row.month_6 >= 0 ? '+' : '' }}{{ scope.row.month_6 }}%
+                </span>
+                <span v-else style="color: #d1d5db">-</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="7月" align="center">
+              <template #default="scope">
+                <span v-if="scope.row.month_7 !== null"
+                      class="percent-text"
+                      :style="`color: ${scope.row.month_7 >= 0 ? '#f56c6c' : '#67c23a'}`">
+                  {{ scope.row.month_7 >= 0 ? '+' : '' }}{{ scope.row.month_7 }}%
+                </span>
+                <span v-else style="color: #d1d5db">-</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="8月" align="center">
+              <template #default="scope">
+                <span v-if="scope.row.month_8 !== null"
+                      class="percent-text"
+                      :style="`color: ${scope.row.month_8 >= 0 ? '#f56c6c' : '#67c23a'}`">
+                  {{ scope.row.month_8 >= 0 ? '+' : '' }}{{ scope.row.month_8 }}%
+                </span>
+                <span v-else style="color: #d1d5db">-</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="9月" align="center">
+              <template #default="scope">
+                <span v-if="scope.row.month_9 !== null"
+                      class="percent-text"
+                      :style="`color: ${scope.row.month_9 >= 0 ? '#f56c6c' : '#67c23a'}`">
+                  {{ scope.row.month_9 >= 0 ? '+' : '' }}{{ scope.row.month_9 }}%
+                </span>
+                <span v-else style="color: #d1d5db">-</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="10月" align="center">
+              <template #default="scope">
+                <span v-if="scope.row.month_10 !== null"
+                      class="percent-text"
+                      :style="`color: ${scope.row.month_10 >= 0 ? '#f56c6c' : '#67c23a'}`">
+                  {{ scope.row.month_10 >= 0 ? '+' : '' }}{{ scope.row.month_10 }}%
+                </span>
+                <span v-else style="color: #d1d5db">-</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="11月" align="center">
+              <template #default="scope">
+                <span v-if="scope.row.month_11 !== null"
+                      class="percent-text"
+                      :style="`color: ${scope.row.month_11 >= 0 ? '#f56c6c' : '#67c23a'}`">
+                  {{ scope.row.month_11 >= 0 ? '+' : '' }}{{ scope.row.month_11 }}%
+                </span>
+                <span v-else style="color: #d1d5db">-</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="12月" align="center">
+              <template #default="scope">
+                <span v-if="scope.row.month_12 !== null"
+                      class="percent-text"
+                      :style="`color: ${scope.row.month_12 >= 0 ? '#f56c6c' : '#67c23a'}`">
+                  {{ scope.row.month_12 >= 0 ? '+' : '' }}{{ scope.row.month_12 }}%
+                </span>
+                <span v-else style="color: #d1d5db">-</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="年度收益" align="center">
+              <template #default="scope">
+                <span class="percent-text"
+                      :style="`color: ${scope.row.year_return >= 0 ? '#f56c6c' : '#67c23a'}; font-weight: 600;`">
+                  {{ scope.row.year_return >= 0 ? '+' : '' }}{{ scope.row.year_return }}%
+                </span>
+              </template>
+            </el-table-column>
+            <el-table-column label="胜率" align="center" fixed="right">
+              <template #default="scope">
+                <span class="percent-text" style="color: #409eff; font-weight: 600;">
+                  {{ scope.row.win_rate }}%
+                </span>
+                <div style="font-size: 11px; color: #9ca3af; margin-top: 2px;">
+                  {{ scope.row.total_months }}个月
+                </div>
+              </template>
+            </el-table-column>
+          </el-table>
+        </el-card>
+      </el-col>
+    </el-row>
+
     <!-- 月度收益分析 -->
     <el-row :gutter="24" v-if="analysisData" align="stretch">
       <el-col :span="16">
@@ -259,38 +413,181 @@
       </el-col>
     </el-row>
 
-    <!-- 风险指标 -->
-    <el-row :gutter="24" v-if="analysisData">
+    <!-- 最高点回本分析 -->
+    <el-row :gutter="24" v-if="analysisData" class="compact-analysis">
       <el-col :span="24">
         <el-card>
           <template #header>
             <div class="card-header">
-              <span>风险指标详情</span>
+              <span>最高点回本分析</span>
+              <el-tag v-if="analysisData.peak_recovery.status === 'current_peak'" type="success">当前在历史最高点</el-tag>
+              <el-tag v-else-if="analysisData.peak_recovery.status === 'recovered'" type="success">已回本</el-tag>
+              <el-tag v-else type="warning">尚未回本</el-tag>
             </div>
           </template>
-          <el-row :gutter="24">
-            <el-col :span="6">
-              <div class="risk-item">
-                <div class="risk-label">下行风险</div>
-                <div class="risk-value">{{ analysisData.risk_metrics.downside_deviation.toFixed(2) }}%</div>
+          <el-row :gutter="16">
+            <el-col :span="8">
+              <div class="recovery-item-compact">
+                <div class="recovery-label-compact">历史最高净值</div>
+                <div class="recovery-value-compact">{{ analysisData.peak_recovery.peak_nav }}</div>
+                <div class="recovery-date-compact">{{ analysisData.peak_recovery.peak_date }}</div>
               </div>
             </el-col>
-            <el-col :span="6">
-              <div class="risk-item">
-                <div class="risk-label">索提诺比率</div>
-                <div class="risk-value">{{ analysisData.risk_metrics.sortino_ratio.toFixed(2) }}</div>
+            <el-col :span="8">
+              <div class="recovery-item-compact">
+                <div class="recovery-label-compact">
+                  {{ analysisData.peak_recovery.status === 'current_peak' ? '当前状态' :
+                     analysisData.peak_recovery.status === 'recovered' ? '回本时间' : '距最高点' }}
+                </div>
+                <div class="recovery-value-compact"
+                     :style="`color: ${analysisData.peak_recovery.status === 'not_recovered' ? '#e6a23c' : '#67c23a'}`">
+                  <template v-if="analysisData.peak_recovery.status === 'current_peak'">
+                    在最高点
+                  </template>
+                  <template v-else-if="analysisData.peak_recovery.status === 'recovered'">
+                    {{ analysisData.peak_recovery.recovery_days }}天
+                  </template>
+                  <template v-else>
+                    {{ analysisData.peak_recovery.days_since_peak }}天
+                  </template>
+                </div>
+                <div class="recovery-date-compact" v-if="analysisData.peak_recovery.recovery_date">
+                  {{ analysisData.peak_recovery.recovery_date }}
+                </div>
               </div>
             </el-col>
-            <el-col :span="6">
-              <div class="risk-item">
-                <div class="risk-label">最大连续下跌天数</div>
-                <div class="risk-value">{{ analysisData.risk_metrics.max_consecutive_loss_days }}天</div>
+            <el-col :span="8" v-if="analysisData.peak_recovery.status === 'not_recovered'">
+              <div class="recovery-item-compact">
+                <div class="recovery-label-compact">当前回撤</div>
+                <div class="recovery-value-compact" style="color: #e6a23c">
+                  {{ analysisData.peak_recovery.current_drawdown_from_peak.toFixed(2) }}%
+                </div>
+                <div class="recovery-date-compact">需上涨 {{ Math.abs(analysisData.peak_recovery.current_drawdown_from_peak).toFixed(2) }}%</div>
               </div>
             </el-col>
-            <el-col :span="6">
-              <div class="risk-item">
-                <div class="risk-label">VAR(95%)</div>
-                <div class="risk-value">{{ analysisData.risk_metrics.var_95.toFixed(2) }}%</div>
+          </el-row>
+          <el-row :gutter="16" style="margin-top: 16px;">
+            <el-col :span="24">
+              <div class="recovery-description-section">
+                <div class="recovery-label-compact">说明</div>
+                <div class="recovery-description-full" v-if="analysisData.peak_recovery.status === 'not_recovered'">
+                  在 {{ analysisData.peak_recovery.peak_date }} 最高点买入，至今 {{ analysisData.peak_recovery.days_since_peak }} 天，
+                  仍亏损 {{ Math.abs(analysisData.peak_recovery.current_drawdown_from_peak).toFixed(2) }}%，尚未回本。
+                </div>
+                <div class="recovery-description-full" v-else-if="analysisData.peak_recovery.status === 'recovered'">
+                  在 {{ analysisData.peak_recovery.peak_date }} 最高点买入，
+                  经过 {{ analysisData.peak_recovery.recovery_days }} 天后在 {{ analysisData.peak_recovery.recovery_date }} 成功回本。
+                </div>
+                <div class="recovery-description-full" v-else>
+                  产品当前净值处于历史最高点，表现优异。
+                </div>
+              </div>
+            </el-col>
+          </el-row>
+        </el-card>
+      </el-col>
+    </el-row>
+
+    <!-- 历史最大回撤修复分析 -->
+    <el-row :gutter="24" v-if="analysisData" class="compact-analysis">
+      <el-col :span="24">
+        <el-card>
+          <template #header>
+            <div class="card-header">
+              <span>历史最大回撤修复分析</span>
+              <el-tag v-if="analysisData.max_drawdown_analysis.is_recovered" type="success">已修复</el-tag>
+              <el-tag v-else type="danger">尚未修复</el-tag>
+            </div>
+          </template>
+          <el-row :gutter="16">
+            <el-col :span="8">
+              <div class="recovery-item-compact">
+                <div class="recovery-label-compact">最大回撤</div>
+                <div class="recovery-value-compact" style="color: #f56c6c">
+                  {{ analysisData.max_drawdown_analysis.max_drawdown }}%
+                </div>
+              </div>
+            </el-col>
+            <el-col :span="8">
+              <div class="recovery-item-compact">
+                <div class="recovery-label-compact">峰值</div>
+                <div class="recovery-value-compact">{{ analysisData.max_drawdown_analysis.peak_nav }}</div>
+                <div class="recovery-date-compact">{{ analysisData.max_drawdown_analysis.peak_date }}</div>
+              </div>
+            </el-col>
+            <el-col :span="8">
+              <div class="recovery-item-compact">
+                <div class="recovery-label-compact">谷底</div>
+                <div class="recovery-value-compact" style="color: #67c23a">{{ analysisData.max_drawdown_analysis.trough_nav }}</div>
+                <div class="recovery-date-compact">{{ analysisData.max_drawdown_analysis.trough_date }}</div>
+              </div>
+            </el-col>
+          </el-row>
+          <el-row :gutter="16" style="margin-top: 12px;">
+            <el-col :span="8">
+              <div class="recovery-item-compact">
+                <div class="recovery-label-compact">回撤持续</div>
+                <div class="recovery-value-compact" style="color: #e6a23c">
+                  {{ analysisData.max_drawdown_analysis.drawdown_days }}天
+                </div>
+              </div>
+            </el-col>
+            <el-col :span="8" v-if="analysisData.max_drawdown_analysis.is_recovered">
+              <div class="recovery-item-compact">
+                <div class="recovery-label-compact">修复时间</div>
+                <div class="recovery-value-compact" style="color: #67c23a">
+                  {{ analysisData.max_drawdown_analysis.recovery_days }}天
+                </div>
+              </div>
+            </el-col>
+            <el-col :span="8" v-if="analysisData.max_drawdown_analysis.is_recovered">
+              <div class="recovery-item-compact">
+                <div class="recovery-label-compact">完整周期</div>
+                <div class="recovery-value-compact">
+                  {{ analysisData.max_drawdown_analysis.total_recovery_days }}天
+                </div>
+              </div>
+            </el-col>
+            <el-col :span="8" v-if="!analysisData.max_drawdown_analysis.is_recovered">
+              <div class="recovery-item-compact">
+                <div class="recovery-label-compact">距谷底</div>
+                <div class="recovery-value-compact" style="color: #909399">
+                  {{ analysisData.max_drawdown_analysis.days_since_trough }}天
+                </div>
+              </div>
+            </el-col>
+            <el-col :span="8" v-if="!analysisData.max_drawdown_analysis.is_recovered">
+              <div class="recovery-item-compact">
+                <div class="recovery-label-compact">当前净值</div>
+                <div class="recovery-value-compact">{{ analysisData.max_drawdown_analysis.current_nav }}</div>
+                <div class="recovery-date-compact">
+                  距峰 {{ analysisData.max_drawdown_analysis.current_drawdown_from_peak.toFixed(2) }}%
+                </div>
+              </div>
+            </el-col>
+          </el-row>
+          <el-row :gutter="16" style="margin-top: 16px;">
+            <el-col :span="24">
+              <div class="recovery-description-section">
+                <div class="recovery-label-compact">说明</div>
+                <div class="recovery-description-full" v-if="analysisData.max_drawdown_analysis.is_recovered">
+                  历史最大回撤发生在 {{ analysisData.max_drawdown_analysis.peak_date }} 至 {{ analysisData.max_drawdown_analysis.trough_date }} 期间，
+                  从净值 {{ analysisData.max_drawdown_analysis.peak_nav }} 回撤至 {{ analysisData.max_drawdown_analysis.trough_nav }}，
+                  回撤幅度 {{ Math.abs(analysisData.max_drawdown_analysis.max_drawdown).toFixed(2) }}%，
+                  持续 {{ analysisData.max_drawdown_analysis.drawdown_days }} 天。
+                  随后经过 {{ analysisData.max_drawdown_analysis.recovery_days }} 天，
+                  在 {{ analysisData.max_drawdown_analysis.recovery_date }} 成功修复至峰值水平。
+                  从峰值到完全修复总计 {{ analysisData.max_drawdown_analysis.total_recovery_days }} 天。
+                </div>
+                <div class="recovery-description-full" v-else>
+                  历史最大回撤发生在 {{ analysisData.max_drawdown_analysis.peak_date }} 至 {{ analysisData.max_drawdown_analysis.trough_date }} 期间，
+                  从净值 {{ analysisData.max_drawdown_analysis.peak_nav }} 回撤至 {{ analysisData.max_drawdown_analysis.trough_nav }}，
+                  回撤幅度 {{ Math.abs(analysisData.max_drawdown_analysis.max_drawdown).toFixed(2) }}%，
+                  持续 {{ analysisData.max_drawdown_analysis.drawdown_days }} 天。
+                  从谷底至今已过 {{ analysisData.max_drawdown_analysis.days_since_trough }} 天，
+                  当前净值 {{ analysisData.max_drawdown_analysis.current_nav }}，
+                  距峰值仍有 {{ Math.abs(analysisData.max_drawdown_analysis.current_drawdown_from_peak).toFixed(2) }}% 的差距，尚未完全修复。
+                </div>
               </div>
             </el-col>
           </el-row>
@@ -473,7 +770,7 @@ const renderMonthlyReturnChart = () => {
 
   monthlyReturnChart = echarts.init(monthlyReturnChartRef.value)
 
-  const monthlyData = analysisData.value.monthly_returns
+  const monthlyData = analysisData.value.monthly_returns.returns
   const colors = monthlyData.returns.map(val => val >= 0 ? '#F56C6C' : '#67C23A')
 
   const option = {
@@ -628,5 +925,92 @@ const renderMonthlyReturnChart = () => {
 
 .percent-text {
   font-family: 'Inter', 'SF Pro Display', 'Helvetica Neue', sans-serif;
+}
+
+.recovery-item {
+  text-align: center;
+  padding: 20px;
+}
+
+.recovery-label {
+  font-size: 14px;
+  color: #6b7280;
+  margin-bottom: 12px;
+  font-weight: 500;
+}
+
+.recovery-value {
+  font-size: 28px;
+  font-weight: 600;
+  color: #1f2937;
+  font-family: 'Inter', 'SF Pro Display', 'Helvetica Neue', sans-serif;
+  margin-bottom: 8px;
+}
+
+.recovery-date {
+  font-size: 13px;
+  color: #9ca3af;
+}
+
+.recovery-description {
+  font-size: 14px;
+  color: #4b5563;
+  line-height: 1.6;
+  text-align: left;
+  padding: 10px 0;
+}
+
+.compact-analysis {
+  margin-bottom: 16px;
+}
+
+.recovery-item-compact {
+  text-align: center;
+  padding: 10px 5px;
+}
+
+.recovery-label-compact {
+  font-size: 12px;
+  color: #6b7280;
+  margin-bottom: 6px;
+  font-weight: 500;
+}
+
+.recovery-value-compact {
+  font-size: 18px;
+  font-weight: 600;
+  color: #1f2937;
+  font-family: 'Inter', 'SF Pro Display', 'Helvetica Neue', sans-serif;
+  margin-bottom: 4px;
+}
+
+.recovery-date-compact {
+  font-size: 11px;
+  color: #9ca3af;
+}
+
+.recovery-description-compact {
+  font-size: 12px;
+  color: #4b5563;
+  line-height: 1.5;
+  text-align: left;
+  padding: 5px 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.recovery-description-section {
+  padding: 10px 15px;
+  background-color: #f9fafb;
+  border-radius: 6px;
+}
+
+.recovery-description-full {
+  font-size: 12px;
+  color: #4b5563;
+  line-height: 1.7;
+  text-align: left;
+  margin-top: 8px;
 }
 </style>
