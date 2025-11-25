@@ -9,7 +9,7 @@ import os
 from datetime import datetime
 
 # 导入路由模块
-from .routes import nav, strategy, position, trade, dividend, transaction, project_holding, stage_performance, nav_crawler, product_analysis, fund
+from .routes import nav, strategy, position, trade, dividend, transaction, project_holding, stage_performance, nav_crawler, product_analysis, fund, fund_schedule
 from .database import init_database, get_database_status
 from .init_data import init_data_if_needed
 
@@ -154,6 +154,7 @@ app.include_router(trade.router, tags=["交易分析"])
 app.include_router(transaction.router, tags=["交易分析"])
 app.include_router(project_holding.router, tags=["项目持仓分析"])
 app.include_router(stage_performance.router, tags=["阶段涨幅分析"])
+app.include_router(fund_schedule.router, tags=["基金档期管理"])
 
 # 配置静态文件服务 (用于生产环境)
 # 在Docker容器中，前端构建文件在 /app/frontend/dist

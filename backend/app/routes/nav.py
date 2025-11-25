@@ -397,14 +397,27 @@ async def get_nav_statistics(
 
 
 @router.get("/funds", response_model=APIResponse, summary="获取有净值数据的基金列表")
-async def get_funds_with_nav(db: Session = Depends(get_db)):
+async def get_funds_with_nav(
+    search: str = Query(None, description="搜索关键词，支持基金代码或基金名称模糊搜索"),
+    db: Session = Depends(get_db)
+):
     """
     获取所有有净值数据的基金列表
     用于前端基金选择器
+    支持通过基金代码或名称模糊搜索
     """
     try:
         # 查询有净值数据的基金
-        funds_with_nav = db.query(Fund).join(Nav).distinct().all()
+        query = db.query(Fund).join(Nav).distinct()
+
+        # 如果有搜索关键词，添加过滤条件
+        if search:
+            query = query.filter(
+                (Fund.fund_code.like(f"%{search}%")) |
+                (Fund.fund_name.like(f"%{search}%"))
+            )
+
+        funds_with_nav = query.all()
         
         fund_list = [
             {

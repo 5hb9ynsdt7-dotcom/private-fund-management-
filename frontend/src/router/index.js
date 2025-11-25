@@ -30,6 +30,12 @@ const routes = [
     meta: { title: '产品分析' }
   },
   {
+    path: '/fund-schedule',
+    name: 'FundSchedule',
+    component: () => import('../views/FundSchedule.vue'),
+    meta: { title: '产品档期' }
+  },
+  {
     path: '/position',
     name: 'PositionAnalysis',
     component: () => import('../views/PositionAnalysis.vue'),

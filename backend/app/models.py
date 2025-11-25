@@ -3,7 +3,7 @@
 Private Fund Management System Database Models
 """
 
-from sqlalchemy import Column, String, Integer, Date, Boolean, ForeignKey, UniqueConstraint, Numeric
+from sqlalchemy import Column, String, Integer, Date, DateTime, Boolean, ForeignKey, UniqueConstraint, Numeric, Text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -203,6 +203,28 @@ class ClientDividend(Base):
     
     def __repr__(self):
         return f"<ClientDividend(group_id='{self.group_id}', fund_code='{self.fund_code}', type='{self.transaction_type}', amount={self.confirmed_amount})>"
+
+
+class FundScheduleRule(Base):
+    """
+    基金档期规则表 - 存储基金开放期规则
+    """
+    __tablename__ = 'fund_schedule_rule'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    fund_code = Column(String(20), ForeignKey('fund.fund_code', ondelete='CASCADE'),
+                      nullable=False, unique=True, comment='关联基金代码')
+    subscription_rule = Column(Text, comment='申购规则描述，如：每月15日和每月最后一个交易日')
+    redemption_rule = Column(Text, comment='赎回规则描述，如：每月最后一个交易日')
+    lock_period = Column(String(100), comment='锁定期描述，如：3个月、6个月、1年')
+    created_at = Column(DateTime, default=datetime.now, comment='创建时间')
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, comment='更新时间')
+
+    # 建立与基金表的关系
+    fund = relationship("Fund", backref="schedule_rule")
+
+    def __repr__(self):
+        return f"<FundScheduleRule(fund_code='{self.fund_code}')>"
 
 
 class Transaction(Base):
@@ -478,6 +500,7 @@ TABLES_CREATION_ORDER = [
     Position,               # 持仓表（依赖Client和Fund）
     Dividend,               # 分红表（依赖Fund）
     ClientDividend,         # 客户分红表（依赖Client和Fund）
+    FundScheduleRule,       # 基金档期规则表（依赖Fund）
     Transaction,            # 交易表（无外键依赖，独立存储）
     ProjectHoldingAsset,    # 项目持仓资产表（无外键依赖）
     ProjectHoldingIndustry, # 项目持仓行业表（无外键依赖）

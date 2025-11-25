@@ -38,6 +38,11 @@
             <span>产品分析</span>
           </el-menu-item>
 
+          <el-menu-item index="/fund-schedule">
+            <el-icon><Calendar /></el-icon>
+            <span>产品档期</span>
+          </el-menu-item>
+
           <el-menu-item index="/position">
             <el-icon><PieChart /></el-icon>
             <span>持仓分析</span>
