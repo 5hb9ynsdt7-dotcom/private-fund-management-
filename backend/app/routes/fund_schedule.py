@@ -30,6 +30,7 @@ schedule_service = FundScheduleService()
 class FundScheduleRuleCreate(BaseModel):
     """创建/更新档期规则的请求模型"""
     fund_code: str
+    fund_name: Optional[str] = None
     subscription_rule: Optional[str] = None
     redemption_rule: Optional[str] = None
     lock_period: Optional[str] = None
@@ -80,13 +81,23 @@ async def create_or_update_rule(
     - **lock_period**: 锁定期描述
     """
     try:
-        # 检查基金是否存在
+        # 检查基金是否存在，如果不存在且提供了基金名称，则自动创建
         fund = db.query(Fund).filter(Fund.fund_code == rule_data.fund_code).first()
         if not fund:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"基金 {rule_data.fund_code} 不存在"
-            )
+            if rule_data.fund_name:
+                # 自动创建基金记录
+                fund = Fund(
+                    fund_code=rule_data.fund_code,
+                    fund_name=rule_data.fund_name
+                )
+                db.add(fund)
+                db.flush()  # 刷新以获取fund对象
+                logger.info(f"自动创建基金记录: {rule_data.fund_code} - {rule_data.fund_name}")
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"基金 {rule_data.fund_code} 不存在，请提供基金名称"
+                )
 
         # 查找是否已存在规则
         existing_rule = db.query(FundScheduleRule).filter(

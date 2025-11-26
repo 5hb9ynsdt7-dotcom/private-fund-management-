@@ -206,26 +206,39 @@
         <el-table-column
           prop="major_strategy"
           label="大类策略"
-          width="120"
+          width="150"
           align="center"
         >
           <template #default="{ row }">
-            <el-tag :type="getStrategyTagType(row.major_strategy)" size="small">
-              {{ row.major_strategy || '--' }}
-            </el-tag>
+            <el-select
+              v-model="row.major_strategy"
+              placeholder="选择大类策略"
+              size="small"
+              style="width: 130px"
+              @change="() => handleStrategyChange(row)"
+            >
+              <el-option label="成长配置" value="成长配置" />
+              <el-option label="底仓配置" value="底仓配置" />
+              <el-option label="尾部对冲" value="尾部对冲" />
+            </el-select>
           </template>
         </el-table-column>
-        
+
         <el-table-column
           prop="sub_strategy"
           label="细分策略"
-          width="120"
+          width="150"
           align="center"
         >
           <template #default="{ row }">
-            <el-tag size="small" effect="plain">
-              {{ row.sub_strategy || '--' }}
-            </el-tag>
+            <el-input
+              v-model="row.sub_strategy"
+              placeholder="输入细分策略"
+              size="small"
+              style="width: 130px"
+              @blur="() => handleStrategyChange(row)"
+              @keyup.enter="() => handleStrategyChange(row)"
+            />
           </template>
         </el-table-column>
         
@@ -320,9 +333,12 @@
 
 <script setup>
 import { ref, reactive, onMounted, computed } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { stagePerformanceAPI } from '@/api/stage-performance'
 import html2canvas from 'html2canvas'
+import axios from 'axios'
+
+const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
 
 // 响应式数据
 const tableLoading = ref(false)
@@ -797,6 +813,99 @@ const getReturnClass = (value) => {
   if (num > 0) return 'return-positive'
   if (num < 0) return 'return-negative'
   return 'return-neutral'
+}
+
+// 处理策略变更
+const handleStrategyChange = async (row) => {
+  // 检查是否有必要字段
+  if (!row.major_strategy && !row.sub_strategy) {
+    return // 两个都为空，不保存
+  }
+
+  if (!row.major_strategy) {
+    ElMessage.warning('请选择大类策略')
+    return
+  }
+
+  try {
+    // 先查询策略表中是否已存在该产品的策略
+    const existingStrategyResponse = await axios.get(`${API_BASE}/api/strategy/${row.fund_code}`)
+
+    const existingStrategy = existingStrategyResponse.data
+
+    // 检查是否有冲突（同一产品策略信息不同）
+    if (existingStrategy &&
+        (existingStrategy.main_strategy !== row.major_strategy ||
+         existingStrategy.sub_strategy !== row.sub_strategy)) {
+      // 弹窗确认
+      try {
+        await ElMessageBox.confirm(
+          `产品 ${row.fund_code} 的策略信息在策略表中已存在且不同：\n\n` +
+          `现有策略：${existingStrategy.main_strategy} - ${existingStrategy.sub_strategy || '--'}\n` +
+          `新策略：${row.major_strategy} - ${row.sub_strategy || '--'}\n\n` +
+          `是否要更新为新的策略信息？`,
+          '策略冲突确认',
+          {
+            confirmButtonText: '更新',
+            cancelButtonText: '取消',
+            type: 'warning',
+          }
+        )
+      } catch {
+        // 用户取消，恢复原值
+        row.major_strategy = existingStrategy.main_strategy
+        row.sub_strategy = existingStrategy.sub_strategy
+        return
+      }
+    }
+  } catch (error) {
+    // 如果是404，说明策略不存在，继续保存
+    if (error.response?.status !== 404) {
+      console.error('查询策略失败:', error)
+      // 非404错误，可能是网络问题，询问是否继续
+      try {
+        await ElMessageBox.confirm(
+          '无法查询现有策略信息，是否继续保存？',
+          '提示',
+          {
+            confirmButtonText: '继续保存',
+            cancelButtonText: '取消',
+            type: 'warning',
+          }
+        )
+      } catch {
+        return // 用户取消
+      }
+    }
+  }
+
+  // 保存策略信息
+  try {
+    await axios.post(`${API_BASE}/api/strategy/`, {
+      fund_code: row.fund_code,
+      main_strategy: row.major_strategy,
+      sub_strategy: row.sub_strategy || '',
+      is_qd: false
+    })
+
+    ElMessage.success(`产品 ${row.fund_code} 策略信息已保存`)
+
+    // 保存成功后，从后端重新获取该产品的策略数据以确认保存成功
+    try {
+      const savedStrategyResponse = await axios.get(`${API_BASE}/api/strategy/${row.fund_code}`)
+      const savedStrategy = savedStrategyResponse.data
+
+      // 更新本地表格数据，确保显示的是数据库中的实际值
+      row.major_strategy = savedStrategy.main_strategy
+      row.sub_strategy = savedStrategy.sub_strategy
+    } catch (fetchError) {
+      console.warn('获取已保存的策略数据失败:', fetchError)
+      // 即使获取失败，保存已经成功，不影响用户操作
+    }
+  } catch (error) {
+    console.error('保存策略失败:', error)
+    ElMessage.error(`保存失败: ${error.response?.data?.detail || error.message}`)
+  }
 }
 
 const getStrategyTagType = (strategy) => {
