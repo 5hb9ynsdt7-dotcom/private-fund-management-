@@ -379,7 +379,7 @@ import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import axios from 'axios'
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
+const API_BASE = import.meta.env.PROD ? '' : 'http://localhost:8000'
 
 const loading = ref(false)
 const scheduleRules = ref([])

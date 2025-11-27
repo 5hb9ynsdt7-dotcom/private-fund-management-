@@ -606,7 +606,7 @@ import axios from 'axios'
 import { ElMessage } from 'element-plus'
 import * as echarts from 'echarts'
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
+const API_BASE = import.meta.env.PROD ? '' : 'http://localhost:8000'
 
 const loading = ref(false)
 const selectedFundCode = ref('')
