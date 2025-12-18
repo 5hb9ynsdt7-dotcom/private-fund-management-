@@ -78,6 +78,33 @@ const routes = [
     meta: { title: '阶段涨幅' }
   },
   {
+    path: '/quantitative-analysis',
+    name: 'QuantitativeAnalysis',
+    component: () => import('../views/QuantitativeAnalysis/index.vue'),
+    meta: { title: '量化分析' },
+    redirect: '/quantitative-analysis/product-list',
+    children: [
+      {
+        path: 'product-list',
+        name: 'QuantProductList',
+        component: () => import('../views/QuantitativeAnalysis/ProductList.vue'),
+        meta: { title: '产品列表' }
+      },
+      {
+        path: 'summary-analysis',
+        name: 'QuantSummaryAnalysis',
+        component: () => import('../views/QuantitativeAnalysis/SummaryAnalysis.vue'),
+        meta: { title: '汇总分析' }
+      },
+      {
+        path: 'single-product/:productId',
+        name: 'QuantSingleProduct',
+        component: () => import('../views/QuantitativeAnalysis/SingleProductAnalysis.vue'),
+        meta: { title: '单品分析' }
+      }
+    ]
+  },
+  {
     path: '/public-fund',
     name: 'PublicFund',
     component: () => import('../views/PublicFund.vue'),

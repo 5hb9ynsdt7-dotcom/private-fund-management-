@@ -71,7 +71,7 @@
         <el-col :span="6">
           <el-input
             v-model="searchForm.search"
-            placeholder="搜索产品名称或代码"
+            placeholder="搜索产品简称或代码"
             clearable
             @keyup.enter="loadData"
           >
@@ -197,8 +197,8 @@
         />
         
         <el-table-column
-          prop="fund_name"
-          label="产品名称"
+          prop="short_name"
+          label="产品简称"
           min-width="200"
           show-overflow-tooltip
         />
@@ -421,7 +421,7 @@ const displayData = computed(() => {
   if (searchForm.search) {
     const search = searchForm.search.toLowerCase()
     filtered = filtered.filter(item => 
-      item.fund_name?.toLowerCase().includes(search) ||
+      item.short_name?.toLowerCase().includes(search) ||
       item.fund_code?.toLowerCase().includes(search)
     )
   }
@@ -512,6 +512,7 @@ const loadData = async () => {
         const mappedData = response.data.products.map(item => ({
           fund_code: item.fund_code,
           fund_name: item.fund_name,
+          short_name: item.short_name,
           major_strategy: item.major_strategy,
           sub_strategy: item.sub_strategy,
           latest_nav_date: item.end_nav_date,
@@ -690,7 +691,7 @@ const downloadSelectedData = async () => {
             return `
               <tr>
                 <td style="border: 1px solid #dcdfe6; padding: 8px; font-family: 'Inter', monospace;">${product.fund_code || '--'}</td>
-                <td style="border: 1px solid #dcdfe6; padding: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 300px;">${product.fund_name || '--'}</td>
+                <td style="border: 1px solid #dcdfe6; padding: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 300px;">${product.short_name || '--'}</td>
                 <td style="border: 1px solid #dcdfe6; padding: 8px; text-align: center;">${product.major_strategy || '--'}</td>
                 <td style="border: 1px solid #dcdfe6; padding: 8px; text-align: center;">${product.sub_strategy || '--'}</td>
                 <td style="border: 1px solid #dcdfe6; padding: 8px; text-align: center; font-family: 'Inter', monospace;">${product.latest_nav_date || '--'}</td>

@@ -62,7 +62,12 @@
             <el-icon><TrendCharts /></el-icon>
             <span>阶段涨幅</span>
           </el-menu-item>
-          
+
+          <el-menu-item index="/quantitative-analysis">
+            <el-icon><DataAnalysis /></el-icon>
+            <span>量化分析</span>
+          </el-menu-item>
+
           <el-menu-item index="/public-fund">
             <el-icon><Money /></el-icon>
             <span>公募基金</span>

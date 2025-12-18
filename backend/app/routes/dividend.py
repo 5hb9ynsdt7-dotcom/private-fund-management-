@@ -35,6 +35,103 @@ router = APIRouter(
 )
 
 
+@router.post("/create", summary="单条录入分红数据")
+async def create_dividend(
+    fund_code: str = Query(..., description="基金代码"),
+    ex_dividend_date: date = Query(..., description="除息日（基准日）"),
+    pre_dividend_nav: Decimal = Query(..., description="除权前净值"),
+    dividend_per_share: Decimal = Query(..., description="分红方案（元/份）"),
+    db: Session = Depends(get_db)
+):
+    """
+    单条录入分红数据
+
+    - **fund_code**: 基金代码
+    - **ex_dividend_date**: 除息日（基准日）
+    - **pre_dividend_nav**: 除权前净值
+    - **dividend_per_share**: 分红方案（元/份产品份额）
+    """
+    try:
+        # 验证基金是否存在
+        fund = db.query(Fund).filter(Fund.fund_code == fund_code).first()
+        if not fund:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"基金代码 {fund_code} 不存在"
+            )
+
+        # 验证分红数据
+        if dividend_per_share <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="分红金额必须大于0"
+            )
+
+        if pre_dividend_nav <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="除权前净值必须大于0"
+            )
+
+        if ex_dividend_date > date.today():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="除息日不能是未来日期"
+            )
+
+        # 检查是否已存在该基准日的分红记录
+        existing_dividend = db.query(Dividend).filter(
+            and_(
+                Dividend.fund_code == fund_code,
+                Dividend.ex_dividend_date == ex_dividend_date
+            )
+        ).first()
+
+        if existing_dividend:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"该基金在 {ex_dividend_date} 的分红记录已存在"
+            )
+
+        # 创建分红记录
+        new_dividend = Dividend(
+            fund_code=fund_code,
+            dividend_date=ex_dividend_date,  # 使用除息日作为分红日期
+            dividend_per_share=dividend_per_share,
+            ex_dividend_date=ex_dividend_date,
+            pre_dividend_nav=pre_dividend_nav
+        )
+
+        db.add(new_dividend)
+        db.commit()
+        db.refresh(new_dividend)
+
+        logger.info(f"成功创建分红记录: {fund_code}, 基准日={ex_dividend_date}, 除权前净值={pre_dividend_nav}, 分红={dividend_per_share}")
+
+        return {
+            "success": True,
+            "message": "分红记录创建成功",
+            "data": {
+                "id": new_dividend.id,
+                "fund_code": new_dividend.fund_code,
+                "fund_name": fund.fund_name,
+                "ex_dividend_date": new_dividend.ex_dividend_date.isoformat(),
+                "pre_dividend_nav": float(new_dividend.pre_dividend_nav),
+                "dividend_per_share": float(new_dividend.dividend_per_share)
+            }
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"创建分红记录失败: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"创建分红记录失败: {str(e)}"
+        )
+
+
 @router.post("/upload", summary="批量上传分红数据")
 async def upload_dividends(
     files: List[UploadFile] = File(..., description="Excel分红文件列表"),

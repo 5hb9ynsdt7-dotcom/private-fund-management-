@@ -21,6 +21,7 @@ class Fund(Base):
 
     fund_code = Column(String(20), primary_key=True, comment='基金代码，如L03126')
     fund_name = Column(String(100), nullable=False, comment='基金全名')
+    short_name = Column(String(100), comment='基金简称，去除前缀和后缀')
     noah_product_id = Column(String(50), comment='诺亚CRM系统产品ID，用于净值抓取')
 
     # 建立与其他表的关系
@@ -28,9 +29,46 @@ class Fund(Base):
     nav_records = relationship("Nav", back_populates="fund", cascade="all, delete-orphan")
     positions = relationship("Position", back_populates="fund", cascade="all, delete-orphan")
     dividends = relationship("Dividend", back_populates="fund", cascade="all, delete-orphan")
-    
+
     def __repr__(self):
         return f"<Fund(code='{self.fund_code}', name='{self.fund_name}')>"
+
+    @staticmethod
+    def generate_short_name(fund_name: str) -> str:
+        """
+        根据基金全名生成简称
+        规则：去除"龙舟-"前缀和"私募证券投资基金"等后缀
+
+        示例：
+        - 龙舟-致远精选六号私募证券投资基金 -> 致远精选六号
+        - 龙舟-上海宽德飞虹2期私募证券投资基金 -> 上海宽德飞虹2期
+        """
+        if not fund_name:
+            return fund_name
+
+        short = fund_name.strip()
+
+        # 去除前缀
+        prefixes = ['龙舟-', '龙舟—', '龙舟 - ', '龙舟 — ']
+        for prefix in prefixes:
+            if short.startswith(prefix):
+                short = short[len(prefix):]
+                break
+
+        # 去除后缀
+        suffixes = [
+            '私募证券投资基金',
+            '私募投资基金',
+            '证券投资基金',
+            '私募基金',
+            '投资基金'
+        ]
+        for suffix in suffixes:
+            if short.endswith(suffix):
+                short = short[:-len(suffix)]
+                break
+
+        return short.strip()
 
 
 class Strategy(Base):
@@ -142,12 +180,13 @@ class Dividend(Base):
     __tablename__ = 'dividend'
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    fund_code = Column(String(20), ForeignKey('fund.fund_code', ondelete='CASCADE'), 
+    fund_code = Column(String(20), ForeignKey('fund.fund_code', ondelete='CASCADE'),
                       nullable=False, comment='关联基金代码')
     dividend_date = Column(Date, nullable=False, comment='分红发放日期')
     dividend_per_share = Column(Numeric(16, 6), nullable=False, comment='每份分红金额')
-    ex_dividend_date = Column(Date, comment='除息日')
+    ex_dividend_date = Column(Date, comment='除息日（基准日）')
     record_date = Column(Date, comment='登记日')
+    pre_dividend_nav = Column(Numeric(16, 4), comment='除权前净值')
     
     # 建立与基金表的关系
     fund = relationship("Fund", back_populates="dividends")
@@ -484,11 +523,56 @@ def validate_nav_data(unit_nav: float, accum_nav: float) -> tuple[bool, str]:
     """
     if unit_nav <= 0:
         return False, "单位净值必须大于0"
-    
+
     if accum_nav < unit_nav:
         return False, "累计净值必须大于等于单位净值"
-    
+
     return True, ""
+
+
+class IndexMeta(Base):
+    """
+    指数元数据表 - 记录指数基本信息和更新状态
+    """
+    __tablename__ = 'index_meta'
+
+    ts_code = Column(String(20), primary_key=True, comment='Tushare指数代码，如 000300.SH')
+    index_name = Column(String(50), nullable=False, comment='指数名称，如 沪深300')
+    latest_trade_date = Column(String(8), comment='最新交易日期，格式 YYYYMMDD')
+    initial_start_date = Column(String(8), comment='初始化起始日期，格式 YYYYMMDD')
+    total_records = Column(Integer, default=0, comment='总记录数')
+    last_update_time = Column(DateTime, default=func.now(), onupdate=func.now(), comment='最后更新时间')
+    is_active = Column(Boolean, default=True, comment='是否启用')
+
+    def __repr__(self):
+        return f"<IndexMeta(ts_code='{self.ts_code}', name='{self.index_name}', latest={self.latest_trade_date})>"
+
+
+class IndexDaily(Base):
+    """
+    指数日行情表 - 存储指数每日收盘价等数据
+    来源：Tushare Pro index_daily 接口
+    """
+    __tablename__ = 'index_daily'
+    __table_args__ = (
+        UniqueConstraint('ts_code', 'trade_date', name='uix_index_trade_date'),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    ts_code = Column(String(20), nullable=False, index=True, comment='Tushare指数代码')
+    trade_date = Column(String(8), nullable=False, index=True, comment='交易日期，格式 YYYYMMDD')
+    close = Column(Numeric(12, 4), nullable=False, comment='收盘点位')
+    open = Column(Numeric(12, 4), comment='开盘点位')
+    high = Column(Numeric(12, 4), comment='最高点位')
+    low = Column(Numeric(12, 4), comment='最低点位')
+    pre_close = Column(Numeric(12, 4), comment='昨收盘点位')
+    change = Column(Numeric(12, 4), comment='涨跌点')
+    pct_chg = Column(Numeric(12, 4), comment='涨跌幅（%）')
+    vol = Column(Numeric(20, 2), comment='成交量（手）')
+    amount = Column(Numeric(20, 2), comment='成交额（千元）')
+
+    def __repr__(self):
+        return f"<IndexDaily(ts_code='{self.ts_code}', date='{self.trade_date}', close={self.close})>"
 
 
 # 数据库表创建顺序（考虑外键依赖）
@@ -504,4 +588,6 @@ TABLES_CREATION_ORDER = [
     Transaction,            # 交易表（无外键依赖，独立存储）
     ProjectHoldingAsset,    # 项目持仓资产表（无外键依赖）
     ProjectHoldingIndustry, # 项目持仓行业表（无外键依赖）
+    IndexMeta,              # 指数元数据表（记录更新状态，无外键依赖）
+    IndexDaily,             # 指数日行情表（Tushare数据，无外键依赖）
 ]

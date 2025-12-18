@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 class StagePerformanceResponse(BaseModel):
     fund_code: str
     fund_name: Optional[str] = None
+    short_name: Optional[str] = None  # 产品简称
     major_strategy: Optional[str] = None
     sub_strategy: Optional[str] = None
     latest_nav_date: Optional[date] = None
@@ -82,6 +83,7 @@ async def get_weekly_performance(
         funds_query = db.query(
             Fund.fund_code,
             Fund.fund_name,
+            Fund.short_name,
             Strategy.main_strategy,
             Strategy.sub_strategy,
             Nav.nav_date.label('latest_nav_date'),
@@ -195,6 +197,7 @@ async def get_weekly_performance(
             performance_item = StagePerformanceResponse(
                 fund_code=fund_code,
                 fund_name=fund.fund_name,
+                short_name=fund.short_name,
                 major_strategy=fund.main_strategy,
                 sub_strategy=fund.sub_strategy,
                 latest_nav_date=latest_date,
@@ -292,6 +295,7 @@ async def get_period_performance(
         funds_query = db.query(
             Fund.fund_code,
             Fund.fund_name,
+            Fund.short_name,
             Strategy.main_strategy,
             Strategy.sub_strategy
         ).outerjoin(Strategy, Fund.fund_code == Strategy.fund_code)
@@ -371,6 +375,7 @@ async def get_period_performance(
                 performance_item = {
                     "fund_code": fund.fund_code,
                     "fund_name": fund.fund_name,
+                    "short_name": fund.short_name,
                     "major_strategy": fund.main_strategy,
                     "sub_strategy": fund.sub_strategy,
                     "start_nav_date": start_nav.nav_date,
