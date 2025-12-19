@@ -248,7 +248,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import axios from 'axios'
 
 const router = useRouter()
-const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
+const API_BASE = import.meta.env.PROD ? '' : 'http://localhost:8000'
 
 // 数据
 const products = ref([])
@@ -330,7 +330,7 @@ const formatNumber = (value, decimals = 2) => {
 const handleFetchProducts = async () => {
   loading.value = true
   try {
-    const response = await axios.get(`${apiBaseUrl}/api/quantitative/products`)
+    const response = await axios.get(`${API_BASE}/api/quantitative/products`)
 
     // 后端已经筛选了量化多头产品，直接使用
     products.value = response.data
@@ -530,7 +530,7 @@ const handleDividendSubmit = async () => {
 
   try {
     const response = await axios.post(
-      `${apiBaseUrl}/api/dividend/create`,
+      `${API_BASE}/api/dividend/create`,
       null,
       {
         params: {
@@ -588,7 +588,7 @@ const saveConfigToLocalStorage = (product) => {
 // 保存单个产品配置
 const saveProductConfig = async (product) => {
   try {
-    await axios.post(`${apiBaseUrl}/api/quantitative/product-config`, {
+    await axios.post(`${API_BASE}/api/quantitative/product-config`, {
       fundCode: product.fundCode,
       productName: product.productName,
       trackingIndex: product.trackingIndex,
@@ -603,7 +603,7 @@ const saveProductConfig = async (product) => {
 // 保存所有产品配置
 const saveProductConfigs = async () => {
   try {
-    await axios.post(`${apiBaseUrl}/api/quantitative/product-configs`, {
+    await axios.post(`${API_BASE}/api/quantitative/product-configs`, {
       products: products.value.map(p => ({
         fundCode: p.fundCode,
         productName: p.productName,

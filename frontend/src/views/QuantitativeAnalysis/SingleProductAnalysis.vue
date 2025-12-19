@@ -275,7 +275,7 @@ import * as echarts from 'echarts'
 import * as XLSX from 'xlsx'
 
 const route = useRoute()
-const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
+const API_BASE = import.meta.env.PROD ? '' : 'http://localhost:8000'
 
 // 产品信息
 const productInfo = ref({
@@ -357,7 +357,7 @@ const loadProductData = async () => {
 
   try {
     // 1. 获取产品基础信息（包含已计算好的基础指标）
-    const analysisResponse = await axios.get(`${apiBaseUrl}/api/product-analysis/${productId}`)
+    const analysisResponse = await axios.get(`${API_BASE}/api/product-analysis/${productId}`)
     const analysisData = analysisResponse.data.data
 
     // 2. 从localStorage读取跟踪指数和产品类型(优先使用保存的配置)
@@ -369,7 +369,7 @@ const loadProductData = async () => {
     // 如果localStorage没有配置,降级使用API响应
     if (!trackingIndex) {
       try {
-        const infoResponse = await axios.get(`${apiBaseUrl}/api/quantitative/product/${productId}`)
+        const infoResponse = await axios.get(`${API_BASE}/api/quantitative/product/${productId}`)
         trackingIndex = infoResponse.data.trackingIndex
       } catch (error) {
         console.warn('无法从API获取跟踪指数:', error)
@@ -410,7 +410,7 @@ const loadProductData = async () => {
     }
 
     // 4. 获取产品净值数据
-    const navResponse = await axios.get(`${apiBaseUrl}/api/quantitative/product-nav/${productId}`)
+    const navResponse = await axios.get(`${API_BASE}/api/quantitative/product-nav/${productId}`)
     const navData = navResponse.data
 
     // 更新产品信息的最新净值和日期
@@ -430,7 +430,7 @@ const loadProductData = async () => {
         // 并行加载多年数据
         const promises = years.map(year =>
           axios.post(
-            `${apiBaseUrl}/api/quantitative/calculate-monthly-excess`,
+            `${API_BASE}/api/quantitative/calculate-monthly-excess`,
             {
               year: year,
               productConfigs: productConfigs
@@ -516,7 +516,7 @@ const loadProductData = async () => {
     if (trackingIndex) {
       // 有跟踪指数：获取指数数据并计算超额指标
       try {
-        const indexResponse = await axios.get(`${apiBaseUrl}/api/quantitative/index-data`, {
+        const indexResponse = await axios.get(`${API_BASE}/api/quantitative/index-data`, {
           params: {
             index_code: trackingIndex,
             start_date: navData[0]?.date,

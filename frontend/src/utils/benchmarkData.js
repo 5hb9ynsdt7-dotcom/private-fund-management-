@@ -14,7 +14,7 @@ const INDICES = [
   { name: '上证指数', code: '000001.SH' },
 ]
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
+const API_BASE = import.meta.env.PROD ? '' : 'http://localhost:8000'
 
 /**
  * 检查并初始化指数数据（首次使用）
@@ -24,7 +24,7 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000
 async function ensureIndexInitialized(indexCode) {
   try {
     // 先检查指数状态
-    const statusResponse = await fetch(`${API_BASE_URL}/api/tushare/indices/status`)
+    const statusResponse = await fetch(`${API_BASE}/api/tushare/indices/status`)
     if (!statusResponse.ok) {
       console.error(`获取指数状态失败: ${statusResponse.status}`)
       return false
@@ -42,7 +42,7 @@ async function ensureIndexInitialized(indexCode) {
     // 如果没有数据，执行初始化
     console.log(`正在初始化指数 ${indexCode}...`)
     const initResponse = await fetch(
-      `${API_BASE_URL}/api/tushare/indices/${indexCode}/initialize`,
+      `${API_BASE}/api/tushare/indices/${indexCode}/initialize`,
       { method: 'POST' }
     )
 
@@ -82,7 +82,7 @@ export async function fetchBenchmarkData(indexCode, startDate = null, endDate = 
     // 2. 尝试增量更新数据
     try {
       const updateResponse = await fetch(
-        `${API_BASE_URL}/api/tushare/indices/${indexCode}/update`,
+        `${API_BASE}/api/tushare/indices/${indexCode}/update`,
         { method: 'POST' }
       )
       if (updateResponse.ok) {
@@ -94,7 +94,7 @@ export async function fetchBenchmarkData(indexCode, startDate = null, endDate = 
     }
 
     // 3. 获取本地存储的数据
-    let url = `${API_BASE_URL}/api/tushare/indices/${indexCode}/data`
+    let url = `${API_BASE}/api/tushare/indices/${indexCode}/data`
     const params = new URLSearchParams()
     if (startDate) params.append('start_date', startDate)
     if (endDate) params.append('end_date', endDate)

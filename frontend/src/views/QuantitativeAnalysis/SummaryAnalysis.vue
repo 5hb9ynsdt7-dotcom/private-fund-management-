@@ -279,7 +279,7 @@ import axios from 'axios'
 import * as echarts from 'echarts'
 import { fetchMultipleBenchmarks } from '@/utils/benchmarkData'
 
-const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
+const API_BASE = import.meta.env.PROD ? '' : 'http://localhost:8000'
 
 // 数据
 const loading = ref(false)
@@ -339,7 +339,7 @@ const latestNavDate = computed(() => {
 // 从API获取最新净值日期
 const fetchLatestNavDate = async () => {
   try {
-    const response = await axios.get(`${apiBaseUrl}/api/quantitative/latest-nav-date`)
+    const response = await axios.get(`${API_BASE}/api/quantitative/latest-nav-date`)
     latestNavDateFull.value = response.data.latestNavDate || ''
   } catch (error) {
     console.error('获取最新净值日期失败:', error)
@@ -458,7 +458,7 @@ const handleCalculateMonthly = async () => {
     const configs = productConfigs ? JSON.parse(productConfigs) : {}
 
     // 调用计算API，传入指数数据和产品配置
-    const response = await axios.post(`${apiBaseUrl}/api/quantitative/calculate-monthly-excess`, {
+    const response = await axios.post(`${API_BASE}/api/quantitative/calculate-monthly-excess`, {
       year: selectedYear.value,
       indexDataMap: indexDataMap,
       productConfigs: configs
@@ -498,7 +498,7 @@ const handleCalculateYearly = async () => {
     const configs = productConfigs ? JSON.parse(productConfigs) : {}
 
     // 调用计算API，传入指数数据和产品配置
-    const response = await axios.post(`${apiBaseUrl}/api/quantitative/calculate-yearly-excess`, {
+    const response = await axios.post(`${API_BASE}/api/quantitative/calculate-yearly-excess`, {
       startYear: 2020,
       endYear: new Date().getFullYear(),
       indexDataMap: indexDataMap,
@@ -568,19 +568,19 @@ const handleCalculatePeriod = async () => {
 
     // 并发请求三个时间段的数据
     const [customData, ytdData, recent3mData] = await Promise.all([
-      axios.post(`${apiBaseUrl}/api/quantitative/calculate-period-excess`, {
+      axios.post(`${API_BASE}/api/quantitative/calculate-period-excess`, {
         startDate: customStart,
         endDate: customEnd,
         indexDataMap: indexDataMap,
         productConfigs: configs
       }),
-      axios.post(`${apiBaseUrl}/api/quantitative/calculate-period-excess`, {
+      axios.post(`${API_BASE}/api/quantitative/calculate-period-excess`, {
         startDate: ytdStart,
         endDate: ytdEnd,
         indexDataMap: indexDataMap,
         productConfigs: configs
       }),
-      axios.post(`${apiBaseUrl}/api/quantitative/calculate-period-excess`, {
+      axios.post(`${API_BASE}/api/quantitative/calculate-period-excess`, {
         startDate: recent3mStart,
         endDate: recent3mEnd,
         indexDataMap: indexDataMap,
@@ -709,7 +709,7 @@ const showGroupChart = async (groupName, groupProducts, trackingIndexCode) => {
 
     // 获取净值数据
     const navPromises = fundCodes.map(code =>
-      axios.get(`${apiBaseUrl}/api/nav/list`, {
+      axios.get(`${API_BASE}/api/nav/list`, {
         params: {
           fund_code: code,
           page_size: 1000,
@@ -751,7 +751,7 @@ const showGroupChart = async (groupName, groupProducts, trackingIndexCode) => {
       const endDate = navData[navData.length - 1].date
 
       // 调用后端API获取周度超额曲线
-      return axios.post(`${apiBaseUrl}/api/quantitative/weekly-excess-curve`, {
+      return axios.post(`${API_BASE}/api/quantitative/weekly-excess-curve`, {
         fundCode: product.fundCode,
         startDate: startDate,
         endDate: endDate,
