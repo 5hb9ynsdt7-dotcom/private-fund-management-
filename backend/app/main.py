@@ -12,6 +12,7 @@ from datetime import datetime
 from .routes import nav, strategy, position, trade, dividend, transaction, project_holding, stage_performance, nav_crawler, product_analysis, fund, fund_schedule, quantitative, tushare
 from .database import init_database, get_database_status
 from .init_data import init_data_if_needed
+from .migrations import run_migrations
 
 # 配置日志
 logging.basicConfig(level=logging.INFO)
@@ -201,6 +202,12 @@ async def startup_event():
         init_database()
         app_state["db_ready"] = True
         logger.info("数据库初始化成功")
+
+        # 执行数据库迁移（自动添加缺失字段）
+        logger.info("执行数据库迁移...")
+        migration_success = run_migrations()
+        if not migration_success:
+            logger.warning("数据库迁移失败，但应用将继续运行")
 
         # 初始化示例数据
         init_data_if_needed()
