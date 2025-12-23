@@ -316,27 +316,34 @@ async def get_latest_nav(
 @router.get("/fund/{fund_code}", response_model=APIResponse, summary="获取指定基金净值")
 async def get_nav_by_fund(
     fund_code: str,
-    limit: int = Query(10, ge=1, le=100, description="返回记录数限制"),
+    limit: int = Query(10, ge=1, le=10000, description="返回记录数限制，最大10000条"),
     db: Session = Depends(get_db)
 ):
     """
     获取指定基金的最新净值记录
-    
+
     - **fund_code**: 基金代码
-    - **limit**: 返回记录数量，默认10条
+    - **limit**: 返回记录数量，默认10条，最大10000条
     """
     try:
         nav_service = NavService(db)
         nav_records = nav_service.get_nav_by_fund(fund_code, limit)
-        
+
         if not nav_records:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"基金 {fund_code} 没有净值数据"
             )
-        
-        nav_responses = [NavResponse.from_orm(nav) for nav in nav_records]
-        
+
+        # 转换为响应模型，填充基金简称
+        nav_responses = []
+        for nav in nav_records:
+            nav_response = NavResponse.from_orm(nav)
+            # 使用基金简称（short_name）而不是全名
+            if nav.fund:
+                nav_response.fund_name = nav.fund.short_name or nav.fund.fund_name
+            nav_responses.append(nav_response)
+
         return APIResponse(
             success=True,
             message=f"获取基金 {fund_code} 净值数据成功",
@@ -418,20 +425,29 @@ async def get_funds_with_nav(
             )
 
         funds_with_nav = query.all()
-        
-        fund_list = [
-            {
+
+        # 导入Dividend模型
+        from ..models import Dividend
+
+        fund_list = []
+        for fund in funds_with_nav:
+            # 获取最新净值日期
+            latest_nav = db.query(Nav.nav_date)\
+                .filter(Nav.fund_code == fund.fund_code)\
+                .order_by(Nav.nav_date.desc())\
+                .first()
+
+            # 获取分红次数
+            dividend_count = db.query(Dividend)\
+                .filter(Dividend.fund_code == fund.fund_code)\
+                .count()
+
+            fund_list.append({
                 "fund_code": fund.fund_code,
                 "fund_name": fund.fund_name,
-                "latest_nav_date": db.query(Nav.nav_date)
-                                    .filter(Nav.fund_code == fund.fund_code)
-                                    .order_by(Nav.nav_date.desc())
-                                    .first()[0].isoformat() if db.query(Nav)
-                                    .filter(Nav.fund_code == fund.fund_code)
-                                    .first() else None
-            }
-            for fund in funds_with_nav
-        ]
+                "latest_nav_date": latest_nav[0].isoformat() if latest_nav else None,
+                "dividend_count": dividend_count
+            })
         
         return APIResponse(
             success=True,

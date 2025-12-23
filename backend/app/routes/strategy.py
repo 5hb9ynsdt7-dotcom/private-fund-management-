@@ -282,33 +282,37 @@ async def create_or_update_strategy(
 ):
     """
     创建/更新策略（存在则更新）
-    
+
     **数据模型要求：**
     - 基金代码：必填，6位字符（字母+数字）
     - 大类策略：必填，预定义值（成长/固收/宏观/其他）
     - 细分策略：必填，文本输入
     - 是否QD：布尔值，默认false
-    
+
     **特殊处理：**
-    - 基金验证：操作前检查基金是否存在
+    - 基金自动创建：如果基金不存在，自动创建基金记录（使用默认名称）
     - 策略覆盖：POST时自动更新已有策略
-    
+
     **返回格式：**
     - 成功：{ "action": "created/updated", "fund_code": "L03126" }
     """
     try:
-        # 1. 基金验证：检查基金是否存在
+        # 1. 基金验证：检查基金是否存在，不存在则自动创建
         fund = db.query(Fund).filter(Fund.fund_code == strategy_data.fund_code).first()
         if not fund:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail={
-                    "error": "基金不存在",
-                    "fund_code": strategy_data.fund_code,
-                    "detail": "请检查基金代码是否正确"
-                }
+            # 自动创建基金（使用默认名称）
+            fund_name = f"基金_{strategy_data.fund_code}"
+            short_name = Fund.generate_short_name(fund_name)  # 自动生成简称
+            new_fund = Fund(
+                fund_code=strategy_data.fund_code,
+                fund_name=fund_name,
+                short_name=short_name  # 设置简称
             )
-        
+            db.add(new_fund)
+            db.flush()  # 立即写入数据库，但不提交事务
+            fund = new_fund
+            logger.info(f"自动创建基金: {strategy_data.fund_code} - {fund_name} (简称: {short_name})")
+
         # 2. 检查策略是否已存在
         existing_strategy = db.query(Strategy).filter(Strategy.fund_code == strategy_data.fund_code).first()
         

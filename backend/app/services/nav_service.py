@@ -42,13 +42,15 @@ class NavService:
             if not fund:
                 # 自动创建基金记录
                 fund_name = getattr(nav_data, 'fund_name', None) or f"基金{nav_data.fund_code}"
+                short_name = Fund.generate_short_name(fund_name)  # 自动生成简称
                 fund = Fund(
                     fund_code=nav_data.fund_code,
-                    fund_name=fund_name
+                    fund_name=fund_name,
+                    short_name=short_name  # 设置简称
                 )
                 self.db.add(fund)
                 self.db.flush()  # 确保基金记录立即可用
-                logger.info(f"自动创建基金: {nav_data.fund_code} - {fund_name}")
+                logger.info(f"自动创建基金: {nav_data.fund_code} - {fund_name} (简称: {short_name})")
             
             # 查找是否已存在相同记录
             existing_nav = self.db.query(Nav).filter(
@@ -337,19 +339,19 @@ class NavService:
             
             df = df.sort_values('nav_date')
             
-            # 计算统计指标
-            latest_nav = float(nav_records[0].unit_nav)
-            earliest_nav = float(nav_records[-1].unit_nav) if len(nav_records) > 1 else latest_nav
-            
+            # 计算统计指标（使用累计净值避免分红影响）
+            latest_accum_nav = float(nav_records[0].accum_nav)
+            earliest_accum_nav = float(nav_records[-1].accum_nav) if len(nav_records) > 1 else latest_accum_nav
+
             statistics = {
                 "fund_code": fund_code,
-                "latest_nav": latest_nav,
+                "latest_nav": float(nav_records[0].unit_nav),  # 显示用单位净值
                 "latest_date": nav_records[0].nav_date.isoformat(),
-                "period_return": round((latest_nav / earliest_nav - 1) * 100, 2) if earliest_nav > 0 else 0,
-                "max_nav": float(df['unit_nav'].max()),
-                "min_nav": float(df['unit_nav'].min()),
-                "avg_nav": round(float(df['unit_nav'].mean()), 4),
-                "volatility": round(float(df['unit_nav'].std()), 4),
+                "period_return": round((latest_accum_nav / earliest_accum_nav - 1) * 100, 2) if earliest_accum_nav > 0 else 0,
+                "max_nav": float(df['accum_nav'].max()),
+                "min_nav": float(df['accum_nav'].min()),
+                "avg_nav": round(float(df['accum_nav'].mean()), 4),
+                "volatility": round(float(df['accum_nav'].std()), 4),
                 "records_count": len(nav_records)
             }
             

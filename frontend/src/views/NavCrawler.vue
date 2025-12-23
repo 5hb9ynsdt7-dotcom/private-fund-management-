@@ -102,7 +102,7 @@
         <el-card class="funds-card" style="margin-top: 20px">
           <template #header>
             <div class="card-header">
-              <span>已配置映射的基金 ({{ mappedFunds.length }}/{{ funds.length }})</span>
+              <span>已配置映射的基金 ({{ filteredMappedFunds.length }}/{{ funds.length }})</span>
               <el-button
                 type="primary"
                 @click="crawlAll"
@@ -114,12 +114,33 @@
             </div>
           </template>
 
+          <!-- 搜索框 -->
+          <div class="search-bar" style="margin-bottom: 16px">
+            <el-input
+              v-model="mappedFundsSearch"
+              placeholder="搜索基金代码或基金名称"
+              clearable
+              style="max-width: 400px"
+            >
+              <template #prefix>
+                <el-icon><Search /></el-icon>
+              </template>
+            </el-input>
+          </div>
+
           <el-table
-            :data="mappedFunds"
+            :data="filteredMappedFunds"
             border
             stripe
             v-loading="loading"
+            style="width: 100%"
           >
+            <el-table-column
+              type="index"
+              label="#"
+              width="60"
+              align="center"
+            />
             <el-table-column
               prop="fund_code"
               label="基金代码"
@@ -129,11 +150,12 @@
               prop="fund_name"
               label="基金名称"
               min-width="200"
+              show-overflow-tooltip
             />
             <el-table-column
               prop="noah_product_id"
               label="诺亚产品ID"
-              width="200"
+              width="450"
               show-overflow-tooltip
             />
             <el-table-column
@@ -380,6 +402,7 @@ const accessToken = ref('')
 const nfpToken = ref('')
 const fcCode = ref('18814')
 const searchKeyword = ref('')
+const mappedFundsSearch = ref('')  // 已配置映射基金的搜索关键词
 const tokensSaved = ref(false)
 
 const funds = ref([])
@@ -510,7 +533,20 @@ const getTokenExpiry = (token) => {
 
 // 计算属性：已配置映射的基金
 const mappedFunds = computed(() => {
+  // 后端已按基金代码降序排列，直接过滤即可
   return funds.value.filter(f => f.has_mapping)
+})
+
+// 计算属性：已配置映射基金的搜索过滤
+const filteredMappedFunds = computed(() => {
+  if (!mappedFundsSearch.value) {
+    return mappedFunds.value
+  }
+  const keyword = mappedFundsSearch.value.toLowerCase()
+  return mappedFunds.value.filter(f =>
+    f.fund_code.toLowerCase().includes(keyword) ||
+    f.fund_name.toLowerCase().includes(keyword)
+  )
 })
 
 // 计算属性：搜索过滤后的基金列表
@@ -775,7 +811,10 @@ const crawlSingle = async (fundCode) => {
         created_count: result.created_count,
         updated_count: result.updated_count
       })
-      ElMessage.success(`${fundCode} 净值抓取成功`)
+      ElMessage.success(
+        `${fundCode} 净值抓取成功！\n` +
+        `新增 ${result.created_count} 条，更新 ${result.updated_count} 条`
+      )
     }
   } catch (error) {
     console.error('抓取失败:', error)

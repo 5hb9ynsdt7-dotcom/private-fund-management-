@@ -500,6 +500,7 @@ async def get_fund_dividend_history(
                 dividend_per_share=dividend.dividend_per_share,
                 ex_dividend_date=dividend.ex_dividend_date,
                 record_date=dividend.record_date,
+                pre_dividend_nav=dividend.pre_dividend_nav,
                 fund_name=fund.fund_name
             )
             dividend_history.append(dividend_response)
@@ -607,4 +608,151 @@ async def analyze_dividends(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"分红分析失败: {str(e)}"
+        )
+
+
+@router.delete("/{dividend_id}", summary="删除分红记录")
+async def delete_dividend(
+    dividend_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    删除指定的分红记录
+
+    - **dividend_id**: 分红记录ID
+    """
+    try:
+        # 查找分红记录
+        dividend = db.query(Dividend).filter(Dividend.id == dividend_id).first()
+
+        if not dividend:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"分红记录 ID={dividend_id} 不存在"
+            )
+
+        # 记录删除信息（用于日志）
+        fund_code = dividend.fund_code
+        ex_dividend_date = dividend.ex_dividend_date
+
+        # 删除记录
+        db.delete(dividend)
+        db.commit()
+
+        logger.info(f"成功删除分红记录: ID={dividend_id}, 基金={fund_code}, 除息日={ex_dividend_date}")
+
+        return {
+            "success": True,
+            "message": "分红记录删除成功",
+            "data": {
+                "deleted_id": dividend_id
+            }
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"删除分红记录失败: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"删除分红记录失败: {str(e)}"
+        )
+
+
+@router.put("/{dividend_id}", summary="更新分红记录")
+async def update_dividend(
+    dividend_id: int,
+    ex_dividend_date: date = Query(..., description="除息日（基准日）"),
+    pre_dividend_nav: Decimal = Query(..., description="除权前净值"),
+    dividend_per_share: Decimal = Query(..., description="分红方案（元/份）"),
+    db: Session = Depends(get_db)
+):
+    """
+    更新指定的分红记录
+
+    - **dividend_id**: 分红记录ID
+    - **ex_dividend_date**: 除息日（基准日）
+    - **pre_dividend_nav**: 除权前净值
+    - **dividend_per_share**: 分红方案（元/份产品份额）
+    """
+    try:
+        # 查找分红记录
+        dividend = db.query(Dividend).filter(Dividend.id == dividend_id).first()
+
+        if not dividend:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"分红记录 ID={dividend_id} 不存在"
+            )
+
+        # 验证分红数据
+        if dividend_per_share <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="分红金额必须大于0"
+            )
+
+        if pre_dividend_nav <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="除权前净值必须大于0"
+            )
+
+        if ex_dividend_date > date.today():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="除息日不能是未来日期"
+            )
+
+        # 检查是否与其他记录的除息日冲突（排除当前记录）
+        existing_dividend = db.query(Dividend).filter(
+            and_(
+                Dividend.fund_code == dividend.fund_code,
+                Dividend.ex_dividend_date == ex_dividend_date,
+                Dividend.id != dividend_id
+            )
+        ).first()
+
+        if existing_dividend:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"该基金在 {ex_dividend_date} 已有其他分红记录"
+            )
+
+        # 更新分红记录
+        dividend.ex_dividend_date = ex_dividend_date
+        dividend.dividend_date = ex_dividend_date  # 同步更新分红日期
+        dividend.pre_dividend_nav = pre_dividend_nav
+        dividend.dividend_per_share = dividend_per_share
+
+        db.commit()
+        db.refresh(dividend)
+
+        logger.info(f"成功更新分红记录: ID={dividend_id}, 基金={dividend.fund_code}, 除息日={ex_dividend_date}")
+
+        # 获取基金名称
+        fund = db.query(Fund).filter(Fund.fund_code == dividend.fund_code).first()
+
+        return {
+            "success": True,
+            "message": "分红记录更新成功",
+            "data": {
+                "id": dividend.id,
+                "fund_code": dividend.fund_code,
+                "fund_name": fund.fund_name if fund else None,
+                "ex_dividend_date": dividend.ex_dividend_date.isoformat(),
+                "pre_dividend_nav": float(dividend.pre_dividend_nav),
+                "dividend_per_share": float(dividend.dividend_per_share)
+            }
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"更新分红记录失败: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"更新分红记录失败: {str(e)}"
         )

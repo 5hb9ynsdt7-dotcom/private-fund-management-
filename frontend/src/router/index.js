@@ -12,6 +12,12 @@ const routes = [
     meta: { title: '净值管理' }
   },
   {
+    path: '/nav/detail/:fundCode',
+    name: 'FundNavDetail',
+    component: () => import('../views/FundNavDetail.vue'),
+    meta: { title: '基金净值详情' }
+  },
+  {
     path: '/nav-crawler',
     name: 'NavCrawler',
     component: () => import('../views/NavCrawler.vue'),

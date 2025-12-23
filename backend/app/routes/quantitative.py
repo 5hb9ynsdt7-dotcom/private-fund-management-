@@ -11,10 +11,11 @@ from sqlalchemy.orm import Session
 import io
 
 from app.database import get_db
-from app.models import Strategy, Nav, Fund
+from app.models import Strategy, Nav, Fund, WeeklyExcessCache
 from app.services.quantitative_service import QuantitativeService
 import subprocess
 import urllib.parse
+import json
 
 router = APIRouter(prefix="/api/quantitative", tags=["quantitative"])
 
@@ -119,6 +120,12 @@ async def get_quantitative_products(
             if not latest_nav:
                 continue
 
+            # 获取该产品的分红次数
+            from app.models import Dividend
+            dividend_count = db.query(Dividend).filter(
+                Dividend.fund_code == fund.fund_code
+            ).count()
+
             # 智能识别跟踪指数和产品类型
             fund_name = fund.fund_name
             tracking_index = ""
@@ -156,7 +163,8 @@ async def get_quantitative_products(
                 "mainStrategy": strategy.main_strategy,
                 "manager": "",  # 基金管理人字段暂时为空
                 "latestNav": float(latest_nav.unit_nav),
-                "latestDate": latest_nav.nav_date.strftime("%Y-%m-%d")
+                "latestDate": latest_nav.nav_date.strftime("%Y-%m-%d"),
+                "dividendCount": dividend_count  # 分红次数
             }
             products.append(product)
 
@@ -779,6 +787,34 @@ async def get_latest_nav_date(db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/product-dividends/{fund_code}")
+async def get_product_dividends(fund_code: str, db: Session = Depends(get_db)):
+    """
+    获取产品的所有分红记录
+    用于在净值曲线图上标记分红点
+    """
+    try:
+        from app.models import Dividend
+
+        dividends = db.query(Dividend).filter(
+            Dividend.fund_code == fund_code
+        ).order_by(Dividend.ex_dividend_date).all()
+
+        return [
+            {
+                "dividendDate": dividend.dividend_date.strftime("%Y-%m-%d") if dividend.dividend_date else None,
+                "exDividendDate": dividend.ex_dividend_date.strftime("%Y-%m-%d") if dividend.ex_dividend_date else None,
+                "preDividendNav": float(dividend.pre_dividend_nav) if dividend.pre_dividend_nav else None,
+                "dividendPerShare": float(dividend.dividend_per_share)
+            }
+            for dividend in dividends
+        ]
+
+    except Exception as e:
+        print(f"获取产品分红记录失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.post("/weekly-excess-curve")
 async def get_weekly_excess_curve(
     request_data: Dict[str, Any],
@@ -787,6 +823,7 @@ async def get_weekly_excess_curve(
     """
     获取单个产品的周度累计超额曲线数据（用于绘图）
     使用与月度超额计算相同的周度逻辑，确保分红处理一致
+    支持缓存机制，减少重复计算
     """
     try:
         fund_code = request_data.get("fundCode")
@@ -794,12 +831,33 @@ async def get_weekly_excess_curve(
         end_date = request_data.get("endDate")
         index_code = request_data.get("indexCode")
         index_data_map = request_data.get("indexDataMap", {})
+        force_refresh = request_data.get("forceRefresh", False)  # 是否强制刷新
 
         if not fund_code:
             raise HTTPException(status_code=400, detail="请提供基金代码")
 
         if not index_code:
             raise HTTPException(status_code=400, detail="请提供指数代码")
+
+        # 转换日期格式用于缓存查询
+        cache_start_date = datetime.strptime(start_date, "%Y-%m-%d").date() if start_date else None
+        cache_end_date = datetime.strptime(end_date, "%Y-%m-%d").date() if end_date else None
+
+        # 如果不是强制刷新，先检查缓存
+        if not force_refresh and cache_start_date and cache_end_date:
+            cache_entry = db.query(WeeklyExcessCache).filter(
+                WeeklyExcessCache.fund_code == fund_code,
+                WeeklyExcessCache.tracking_index == index_code,
+                WeeklyExcessCache.start_date == cache_start_date,
+                WeeklyExcessCache.end_date == cache_end_date
+            ).first()
+
+            # 如果缓存存在且在24小时内，返回缓存数据
+            if cache_entry:
+                cache_age = datetime.now() - cache_entry.updated_at
+                if cache_age.total_seconds() < 24 * 3600:  # 24小时 = 86400秒
+                    print(f"✓ 使用缓存数据 (缓存时间: {cache_age.total_seconds()/3600:.1f}小时前)")
+                    return json.loads(cache_entry.excess_data)
 
         # 获取净值数据
         nav_query = db.query(Nav).filter(Nav.fund_code == fund_code)
@@ -833,6 +891,37 @@ async def get_weekly_excess_curve(
         excess_curve = quant_service.calculate_weekly_excess_curve(
             nav_data, index_data, fund_code, start_date, end_date
         )
+
+        # 存储到缓存
+        if cache_start_date and cache_end_date and excess_curve:
+            # 检查是否已存在缓存记录
+            cache_entry = db.query(WeeklyExcessCache).filter(
+                WeeklyExcessCache.fund_code == fund_code,
+                WeeklyExcessCache.tracking_index == index_code,
+                WeeklyExcessCache.start_date == cache_start_date,
+                WeeklyExcessCache.end_date == cache_end_date
+            ).first()
+
+            if cache_entry:
+                # 更新已有缓存
+                cache_entry.excess_data = json.dumps(excess_curve)
+                cache_entry.updated_at = datetime.now()
+                print(f"✓ 更新缓存数据")
+            else:
+                # 创建新缓存记录
+                new_cache = WeeklyExcessCache(
+                    fund_code=fund_code,
+                    tracking_index=index_code,
+                    start_date=cache_start_date,
+                    end_date=cache_end_date,
+                    excess_data=json.dumps(excess_curve),
+                    calculated_at=datetime.now(),
+                    updated_at=datetime.now()
+                )
+                db.add(new_cache)
+                print(f"✓ 创建新缓存记录")
+
+            db.commit()
 
         return excess_curve
 

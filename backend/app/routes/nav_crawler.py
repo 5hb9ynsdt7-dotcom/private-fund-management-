@@ -164,12 +164,18 @@ async def update_product_id_mappings(
 async def get_mapped_funds(db: Session = Depends(get_db)):
     """
     获取所有已配置诺亚CRM产品ID映射的基金列表
+    按更新时间降序排列（最新配置/更新的基金排在前面）
+    如果没有updated_at字段，则按基金代码降序排列
     """
     try:
         from ..models import Fund
 
-        # 查询所有基金，显示是否已配置映射
-        funds = db.query(Fund).all()
+        # 尝试按updated_at降序排列，如果字段不存在则按fund_code降序
+        try:
+            funds = db.query(Fund).order_by(Fund.updated_at.desc()).all()
+        except Exception:
+            # 如果updated_at字段不存在，回退到按fund_code降序
+            funds = db.query(Fund).order_by(Fund.fund_code.desc()).all()
 
         fund_list = [
             {
@@ -289,6 +295,10 @@ async def add_mapping_from_url(
         old_product_id = fund.noah_product_id
         fund.noah_product_id = product_id
 
+        # 更新updated_at时间戳以触发排序
+        from datetime import datetime
+        fund.updated_at = datetime.now()
+
         db.commit()
 
         action = "更新" if old_product_id else "添加"
@@ -351,6 +361,10 @@ async def add_product_mapping(
         # 如果提供了基金名称，也更新基金名称
         if request.fund_name:
             fund.fund_name = request.fund_name
+
+        # 更新updated_at时间戳以触发排序
+        from datetime import datetime
+        fund.updated_at = datetime.now()
 
         db.commit()
 

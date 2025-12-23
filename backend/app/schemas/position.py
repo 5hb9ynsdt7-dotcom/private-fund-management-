@@ -211,30 +211,32 @@ class EnhancedPositionResponse(BaseModel):
     group_id: str
     fund_code: str
     fund_name: Optional[str]
+    short_name: Optional[str] = None  # 基金简称
+    volatility: Optional[float] = None  # 波动率(年化)
     first_buy_date: date  # 首次买入日期
     cost_with_fee: Optional[Decimal]  # 持仓成本(含费)
     cost_without_fee: Optional[Decimal]  # 投资金额(不含费)
     shares: Optional[Decimal]  # 持仓份额
-    
+
     # 计算字段
     buy_nav: Optional[Decimal] = None  # 买入净值 = 投资金额(不含费)/持仓份额
-    
+
     # 净值信息
     latest_nav: Optional[Decimal] = None
     latest_nav_date: Optional[date] = None
-    
+
     # 收益信息
     current_market_value: Optional[Decimal] = None
     total_dividends: Optional[Decimal] = None  # 累计分红
     holding_return: Optional[Decimal] = None   # 持有收益 = 最新净值*持仓份额-持仓成本(含费)
     holding_return_rate: Optional[Decimal] = None  # 持有收益率 = 持有收益/持仓成本(含费)
     period_return: Optional[Decimal] = None   # 阶段收益
-    
+
     # 策略信息
     major_strategy: Optional[str] = None
     sub_strategy: Optional[str] = None
     is_qd: Optional[bool] = None  # 是否QD产品
-    
+
     class Config:
         from_attributes = True
 

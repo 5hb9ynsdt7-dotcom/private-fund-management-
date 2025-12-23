@@ -132,7 +132,7 @@
               <span>净值走势与回撤</span>
             </div>
           </template>
-          <div ref="navChartRef" style="width: 100%; height: 600px"></div>
+          <div ref="navChartRef" style="width: 100%; height: 900px"></div>
         </el-card>
       </el-col>
     </el-row>
@@ -731,6 +731,7 @@ const renderNavChart = () => {
         type: 'line',
         data: analysisData.value.nav_curve.values,
         smooth: true,
+        symbol: 'none',
         xAxisIndex: 0,
         yAxisIndex: 0,
         itemStyle: {
@@ -742,6 +743,7 @@ const renderNavChart = () => {
         type: 'line',
         data: analysisData.value.nav_curve.drawdowns,
         smooth: true,
+        symbol: 'none',
         xAxisIndex: 1,
         yAxisIndex: 1,
         areaStyle: {

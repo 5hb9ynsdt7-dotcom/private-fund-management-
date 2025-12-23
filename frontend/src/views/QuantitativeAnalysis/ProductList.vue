@@ -55,6 +55,9 @@
         <template #default="{ row }">
           <el-link type="primary" @click="handleViewProduct(row)">
             {{ row.displayName }}
+            <span v-if="row.dividendCount > 0" class="dividend-badge">
+              (分红{{ row.dividendCount }}次)
+            </span>
           </el-link>
         </template>
       </el-table-column>
@@ -697,5 +700,13 @@ onMounted(() => {
   overflow: hidden !important;
   text-overflow: ellipsis !important;
   white-space: nowrap !important;
+}
+
+/* 分红次数样式 */
+.dividend-badge {
+  color: #F56C6C;
+  font-size: 12px;
+  margin-left: 4px;
+  font-weight: 500;
 }
 </style>

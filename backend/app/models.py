@@ -23,6 +23,8 @@ class Fund(Base):
     fund_name = Column(String(100), nullable=False, comment='基金全名')
     short_name = Column(String(100), comment='基金简称，去除前缀和后缀')
     noah_product_id = Column(String(50), comment='诺亚CRM系统产品ID，用于净值抓取')
+    created_at = Column(DateTime, server_default=func.now(), comment='创建时间')
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), comment='更新时间')
 
     # 建立与其他表的关系
     strategy = relationship("Strategy", back_populates="fund", cascade="all, delete-orphan", uselist=False)
@@ -575,6 +577,29 @@ class IndexDaily(Base):
         return f"<IndexDaily(ts_code='{self.ts_code}', date='{self.trade_date}', close={self.close})>"
 
 
+class WeeklyExcessCache(Base):
+    """
+    周度超额缓存表 - 存储量化产品的周度累计超额数据
+    用于加速单品分析页面的加载速度，避免重复计算
+    """
+    __tablename__ = 'weekly_excess_cache'
+    __table_args__ = (
+        UniqueConstraint('fund_code', 'tracking_index', 'start_date', 'end_date', name='uix_weekly_excess'),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    fund_code = Column(String(20), nullable=False, index=True, comment='产品代码')
+    tracking_index = Column(String(20), nullable=False, comment='跟踪指数代码')
+    start_date = Column(Date, nullable=False, comment='开始日期')
+    end_date = Column(Date, nullable=False, comment='结束日期')
+    excess_data = Column(Text, nullable=False, comment='周度超额数据（JSON格式）')
+    calculated_at = Column(DateTime, nullable=False, default=func.now(), comment='计算时间')
+    updated_at = Column(DateTime, nullable=False, default=func.now(), onupdate=func.now(), comment='更新时间')
+
+    def __repr__(self):
+        return f"<WeeklyExcessCache(fund='{self.fund_code}', index='{self.tracking_index}', period='{self.start_date} ~ {self.end_date}')>"
+
+
 # 数据库表创建顺序（考虑外键依赖）
 TABLES_CREATION_ORDER = [
     Fund,                   # 基金主表（无外键依赖）
@@ -590,4 +615,5 @@ TABLES_CREATION_ORDER = [
     ProjectHoldingIndustry, # 项目持仓行业表（无外键依赖）
     IndexMeta,              # 指数元数据表（记录更新状态，无外键依赖）
     IndexDaily,             # 指数日行情表（Tushare数据，无外键依赖）
+    WeeklyExcessCache,      # 周度超额缓存表（无外键依赖，性能优化用）
 ]

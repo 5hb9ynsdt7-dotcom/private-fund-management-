@@ -81,6 +81,104 @@ def add_dividend_pre_nav(engine):
         raise
 
 
+def add_fund_timestamps(engine):
+    """为Fund表添加created_at和updated_at时间戳字段"""
+    logger.info("检查 fund.created_at 和 fund.updated_at 字段...")
+
+    try:
+        with engine.connect() as conn:
+            # 检查created_at字段
+            if not check_column_exists(engine, 'fund', 'created_at'):
+                logger.info("添加 fund.created_at 字段...")
+                # SQLite不支持带CURRENT_TIMESTAMP的ALTER TABLE ADD COLUMN，先添加为NULL
+                conn.execute(text("""
+                    ALTER TABLE fund
+                    ADD COLUMN created_at TIMESTAMP
+                """))
+                conn.commit()
+
+                # 为现有记录设置当前时间戳
+                conn.execute(text("""
+                    UPDATE fund
+                    SET created_at = CURRENT_TIMESTAMP
+                    WHERE created_at IS NULL
+                """))
+                conn.commit()
+                logger.info("✓ fund.created_at 字段添加成功")
+            else:
+                logger.info("✓ fund.created_at 字段已存在")
+
+            # 检查updated_at字段
+            if not check_column_exists(engine, 'fund', 'updated_at'):
+                logger.info("添加 fund.updated_at 字段...")
+                # SQLite不支持带CURRENT_TIMESTAMP的ALTER TABLE ADD COLUMN，先添加为NULL
+                conn.execute(text("""
+                    ALTER TABLE fund
+                    ADD COLUMN updated_at TIMESTAMP
+                """))
+                conn.commit()
+
+                # 为现有记录设置当前时间戳
+                conn.execute(text("""
+                    UPDATE fund
+                    SET updated_at = CURRENT_TIMESTAMP
+                    WHERE updated_at IS NULL
+                """))
+                conn.commit()
+                logger.info("✓ fund.updated_at 字段添加成功")
+            else:
+                logger.info("✓ fund.updated_at 字段已存在")
+
+    except Exception as e:
+        logger.error(f"添加Fund时间戳字段失败: {e}")
+        raise
+
+
+def create_weekly_excess_cache_table(engine):
+    """创建周度超额缓存表"""
+    logger.info("检查 weekly_excess_cache 表...")
+
+    try:
+        inspector = inspect(engine)
+        if 'weekly_excess_cache' in inspector.get_table_names():
+            logger.info("✓ weekly_excess_cache 表已存在")
+            return
+
+        with engine.connect() as conn:
+            logger.info("创建 weekly_excess_cache 表...")
+            conn.execute(text("""
+                CREATE TABLE weekly_excess_cache (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    fund_code VARCHAR(20) NOT NULL,
+                    tracking_index VARCHAR(20) NOT NULL,
+                    start_date DATE NOT NULL,
+                    end_date DATE NOT NULL,
+                    excess_data TEXT NOT NULL,
+                    calculated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(fund_code, tracking_index, start_date, end_date)
+                )
+            """))
+
+            # 创建索引
+            conn.execute(text("""
+                CREATE INDEX idx_weekly_excess_fund
+                ON weekly_excess_cache(fund_code)
+            """))
+
+            conn.execute(text("""
+                CREATE INDEX idx_weekly_excess_date
+                ON weekly_excess_cache(updated_at)
+            """))
+
+            conn.commit()
+            logger.info("✓ weekly_excess_cache 表创建成功")
+
+    except Exception as e:
+        logger.error(f"创建 weekly_excess_cache 表失败: {e}")
+        raise
+
+
 def run_migrations():
     """
     执行所有数据库迁移
@@ -98,6 +196,8 @@ def run_migrations():
         # 执行各项迁移
         add_fund_short_name(engine)
         add_dividend_pre_nav(engine)
+        add_fund_timestamps(engine)  # 新增：添加时间戳字段
+        create_weekly_excess_cache_table(engine)  # 新增：创建周度超额缓存表
 
         logger.info("=" * 60)
         logger.info("✓ 所有数据库迁移完成")

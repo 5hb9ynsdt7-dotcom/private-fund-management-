@@ -158,7 +158,7 @@ class NoahCRMCrawler:
         """
         try:
             payload = {
-                "duringDate": "0",  # 全部时间
+                "duringDate": "",  # 空字符串表示全部历史数据
                 "shareCatId": "",
                 "batchId": "",
                 "productId": product_id,

@@ -16,6 +16,7 @@ class DividendBase(BaseModel):
     dividend_per_share: Decimal = Field(..., gt=0, description="每份分红金额")
     ex_dividend_date: Optional[date] = Field(None, description="除息日")
     record_date: Optional[date] = Field(None, description="登记日")
+    pre_dividend_nav: Optional[Decimal] = Field(None, description="除权前净值")
     
     @validator('dividend_date', 'ex_dividend_date', 'record_date')
     def validate_dates(cls, v):

@@ -302,6 +302,7 @@ const coreMetrics = ref({
 // 图表相关
 const chartType = ref('nav')
 const chartLoading = ref(false)
+const refreshing = ref(false)  // 数据刷新状态
 
 // 图表引用
 const navChartRef = ref(null)
@@ -320,6 +321,9 @@ const dataTableRef = ref(null)
 
 // 月度超额数据
 const monthlyExcessData = ref([])
+
+// 分红数据
+const dividendData = ref([])
 
 // 获取指数名称
 const getIndexName = (indexCode) => {
@@ -352,7 +356,7 @@ const getValueClass = (value) => {
 }
 
 // 加载产品数据
-const loadProductData = async () => {
+const loadProductData = async (forceRefresh = false) => {
   const productId = decodeURIComponent(route.params.productId)
 
   try {
@@ -420,11 +424,41 @@ const loadProductData = async () => {
       productInfo.value.latestDate = latestNav.date
     }
 
-    // 5. 加载多年月度超额数据（从API获取，不重新计算）
+    // 5. 获取产品分红数据
+    try {
+      const dividendResponse = await axios.get(`${API_BASE}/api/quantitative/product-dividends/${productId}`)
+      dividendData.value = dividendResponse.data
+      console.log('产品分红数据:', dividendData.value)
+    } catch (error) {
+      console.warn('获取分红数据失败:', error)
+      dividendData.value = []
+    }
+
+    // 6. 加载多年月度超额数据（从API获取，不重新计算）
     if (trackingIndex) {
       try {
+        // 根据产品实际存续时间动态生成年份列表
         const currentYear = new Date().getFullYear()
-        const years = [currentYear, currentYear - 1, currentYear - 2, currentYear - 3] // 加载最近4年数据
+        let inceptionYear = currentYear // 默认为当前年份
+
+        // 从产品最早的净值日期获取成立年份
+        if (navData && navData.length > 0) {
+          const inceptionDate = new Date(navData[0].date)
+          inceptionYear = inceptionDate.getFullYear()
+        }
+
+        // 生成从成立年份到当前年份的所有年份（升序）
+        const years = []
+        for (let year = inceptionYear; year <= currentYear; year++) {
+          years.push(year)
+        }
+
+        console.log(`=== 产品存续时间 ===`)
+        console.log(`成立年份: ${inceptionYear}`)
+        console.log(`当前年份: ${currentYear}`)
+        console.log(`存续年数: ${currentYear - inceptionYear + 1}年`)
+        console.log(`加载年份列表:`, years)
+
         const yearlyData = []
 
         // 并行加载多年数据
@@ -525,12 +559,24 @@ const loadProductData = async () => {
         })
         const indexData = indexResponse.data
 
-        // 基于周度数据计算3个超额指标
-        calculateExcessMetrics(navData, indexData)
+        // 获取周度超额曲线数据（含分红调整）
+        const weeklyExcessResponse = await axios.post(`${API_BASE}/api/quantitative/weekly-excess-curve`, {
+          fundCode: productId,
+          startDate: navData[0]?.date,
+          endDate: navData[navData.length - 1]?.date,
+          indexCode: trackingIndex,
+          indexDataMap: { [trackingIndex]: indexData },
+          forceRefresh: forceRefresh
+        })
+        const weeklyExcessData = weeklyExcessResponse.data
+        console.log('周度超额数据:', weeklyExcessData)
+
+        // 基于API返回的周度超额数据计算核心指标
+        calculateExcessMetrics(weeklyExcessData)
 
         // 绘制图表
         await nextTick()
-        await drawCharts(navData, indexData)
+        await drawCharts(navData, indexData, weeklyExcessData)
       } catch (error) {
         console.error('获取指数数据失败:', error)
         await nextTick()
@@ -548,6 +594,21 @@ const loadProductData = async () => {
   }
 }
 
+// 刷新数据
+const handleRefreshData = async () => {
+  try {
+    refreshing.value = true
+    ElMessage.info('正在刷新数据...')
+    await loadProductData(true)  // 传入forceRefresh=true
+    ElMessage.success('数据刷新成功')
+  } catch (error) {
+    console.error('刷新数据失败:', error)
+    ElMessage.error('刷新数据失败：' + error.message)
+  } finally {
+    refreshing.value = false
+  }
+}
+
 // 绘制图表（无指数数据版本）
 const drawChartsWithoutIndex = async (navData) => {
   // 简化版图表，仅显示净值曲线
@@ -555,68 +616,59 @@ const drawChartsWithoutIndex = async (navData) => {
   console.log('绘制简化版图表（仅净值曲线）')
 }
 
-// 计算超额指标（基于周度数据）
-const calculateExcessMetrics = (navData, indexData) => {
-  // Step 1: 转换日度数据为周度数据
-  const weeklyProductNav = convertToWeeklyNav(navData)
-  const weeklyBenchmarkNav = convertToWeeklyNav(indexData)
-
-  if (weeklyProductNav.length < 2 || weeklyBenchmarkNav.length < 2) {
-    console.warn('周度数据不足，无法计算超额指标')
+// 计算超额指标（基于API返回的周度超额数据）
+const calculateExcessMetrics = (weeklyExcessData) => {
+  if (!weeklyExcessData || weeklyExcessData.length < 2) {
+    console.warn('周度超额数据不足，无法计算超额指标')
     return
   }
 
-  // Step 2: 对齐周度数据
-  const alignedData = alignWeeklyData(weeklyProductNav, weeklyBenchmarkNav)
-  const strategyNav = alignedData.strategy
-  const benchmarkNav = alignedData.benchmark
+  console.log('=== 基于API数据计算超额指标 ===')
+  console.log('数据点数:', weeklyExcessData.length)
 
-  const totalWeeks = strategyNav.length - 1
-
-  // ⚠️ 关键修正：标准化净值序列（起始值=1）
-  const strategyNavNormalized = strategyNav.map(v => v / strategyNav[0])
-  const benchmarkNavNormalized = benchmarkNav.map(v => v / benchmarkNav[0])
-
-  // Step 3: 计算年化超额收益率（期末净值比较法）
-  const excessMultiple = strategyNavNormalized[strategyNavNormalized.length - 1] / benchmarkNavNormalized[benchmarkNavNormalized.length - 1]
+  // Step 1: 计算年化超额收益率
+  const totalWeeks = weeklyExcessData.length - 1
+  const finalCumExcess = weeklyExcessData[weeklyExcessData.length - 1].cumExcessReturn // 百分比
+  const excessMultiple = 1 + finalCumExcess / 100 // 转换为倍数
   const annualizedExcess = (Math.pow(excessMultiple, 52 / totalWeeks) - 1) * 100
 
-  // Step 4: 计算最大超额回撤（基于标准化的超额净值序列）
-  const excessNav = []
-  for (let i = 0; i < strategyNavNormalized.length; i++) {
-    excessNav.push(strategyNavNormalized[i] / benchmarkNavNormalized[i])
-  }
-
-  let peak = excessNav[0]
+  // Step 2: 计算最大超额回撤
+  let peak = 0 // 累计超额的最高点
   let maxExcessDrawdown = 0
-  for (const nav of excessNav) {
-    if (nav > peak) {
-      peak = nav
+  for (const point of weeklyExcessData) {
+    const cumExcess = point.cumExcessReturn
+    if (cumExcess > peak) {
+      peak = cumExcess
     }
-    const drawdown = (nav / peak - 1) * 100
+    const drawdown = cumExcess - peak // 已经是百分比
     if (drawdown < maxExcessDrawdown) {
       maxExcessDrawdown = drawdown
     }
   }
 
-  // Step 5: 计算年化超额波动率（基于周度收益率差）
-  const excessReturns = []
-  for (let t = 1; t < strategyNavNormalized.length; t++) {
-    const retStrategy = (strategyNavNormalized[t] / strategyNavNormalized[t - 1]) - 1
-    const retBenchmark = (benchmarkNavNormalized[t] / benchmarkNavNormalized[t - 1]) - 1
-    const excessReturn = retStrategy - retBenchmark
-    excessReturns.push(excessReturn)
+  // Step 3: 计算年化超额波动率（基于周度超额收益率）
+  const weeklyExcessReturns = []
+  for (let i = 1; i < weeklyExcessData.length; i++) {
+    const prevCumExcess = weeklyExcessData[i - 1].cumExcessReturn
+    const currCumExcess = weeklyExcessData[i].cumExcessReturn
+
+    // 从累计超额计算周度超额收益率
+    const prevMultiple = 1 + prevCumExcess / 100
+    const currMultiple = 1 + currCumExcess / 100
+    const weeklyExcessReturn = (currMultiple / prevMultiple) - 1
+
+    weeklyExcessReturns.push(weeklyExcessReturn)
   }
 
-  const weeklyStd = calculateStdDev(excessReturns)
+  const weeklyStd = calculateStdDev(weeklyExcessReturns)
   const excessVolatility = weeklyStd * Math.sqrt(52) * 100
 
-  // Step 6: 计算其他衍生指标
-  const avgExcessReturn = excessReturns.reduce((sum, r) => sum + r, 0) / excessReturns.length
+  // Step 4: 计算衍生指标
+  const avgExcessReturn = weeklyExcessReturns.reduce((sum, r) => sum + r, 0) / weeklyExcessReturns.length
   const excessSharpe = excessVolatility > 0 ? (avgExcessReturn * 52 * 100) / excessVolatility : 0
   const informationRatio = excessVolatility > 0 ? annualizedExcess / excessVolatility : 0
 
-  // Step 7: 更新指标
+  // Step 5: 更新指标
   coreMetrics.value.annualizedExcess = annualizedExcess
   coreMetrics.value.maxExcessDrawdown = maxExcessDrawdown
   coreMetrics.value.excessVolatility = excessVolatility
@@ -624,16 +676,13 @@ const calculateExcessMetrics = (navData, indexData) => {
   coreMetrics.value.informationRatio = informationRatio
   coreMetrics.value.trackingError = excessVolatility
 
-  console.log('=== 超额指标计算结果 ===')
   console.log('总周数:', totalWeeks)
-  console.log('策略起始净值:', strategyNav[0].toFixed(4), '-> 标准化后:', strategyNavNormalized[0].toFixed(4))
-  console.log('策略期末净值:', strategyNav[strategyNav.length - 1].toFixed(4), '-> 标准化后:', strategyNavNormalized[strategyNavNormalized.length - 1].toFixed(4))
-  console.log('基准起始净值:', benchmarkNav[0].toFixed(4), '-> 标准化后:', benchmarkNavNormalized[0].toFixed(4))
-  console.log('基准期末净值:', benchmarkNav[benchmarkNav.length - 1].toFixed(4), '-> 标准化后:', benchmarkNavNormalized[benchmarkNavNormalized.length - 1].toFixed(4))
-  console.log('超额倍数:', excessMultiple.toFixed(4))
+  console.log('期末累计超额:', finalCumExcess.toFixed(2) + '%')
   console.log('年化超额收益率:', annualizedExcess.toFixed(2) + '%')
   console.log('最大超额回撤:', maxExcessDrawdown.toFixed(2) + '%')
   console.log('年化超额波动率:', excessVolatility.toFixed(2) + '%')
+  console.log('信息比率:', informationRatio.toFixed(2))
+  console.log('超额夏普:', excessSharpe.toFixed(2))
 }
 
 // 将日度净值转换为周度净值（取每周最后一个交易日）
@@ -709,7 +758,7 @@ const calculateStdDev = (values) => {
 }
 
 // 绘制图表
-const drawCharts = async (navData, indexData) => {
+const drawCharts = async (navData, indexData, weeklyExcessData) => {
   chartLoading.value = true
 
   // 先切换到nav确保第一个图表激活
@@ -732,7 +781,8 @@ const drawCharts = async (navData, indexData) => {
 
   // 准备数据
   const dates = navData.map(d => d.date)
-  const navValues = navData.map(d => d.value)
+  const navValues = navData.map(d => d.value) // 单位净值
+  const accumNavValues = navData.map(d => d.accumValue) // 累计净值
   const indexValues = []
   const excessCurve = []
   const drawdownCurve = []
@@ -741,7 +791,17 @@ const drawCharts = async (navData, indexData) => {
   const startNav = navData[0].value
   const startIndex = indexData.find(idx => idx.date === navData[0].date)?.value || 1
 
-  let cumExcess = 1
+  // 将周度超额数据转换为日度格式（前向填充）
+  // API返回格式: [{date: "2024-01-05", cumExcessReturn: 1.23}, ...]
+  const weeklyExcessMap = new Map()
+  if (weeklyExcessData && weeklyExcessData.length > 0) {
+    for (const weekData of weeklyExcessData) {
+      weeklyExcessMap.set(weekData.date, weekData.cumExcessReturn)
+    }
+  }
+
+  let lastWeeklyExcess = 0 // 最近一次的周度超额值（用于前向填充）
+  let cumExcess = 1 // 用于回撤计算
   let maxCumExcess = 1
 
   for (let i = 0; i < navData.length; i++) {
@@ -753,13 +813,14 @@ const drawCharts = async (navData, indexData) => {
       const normalizedIndex = (index.value / startIndex) * startNav
       indexValues.push(normalizedIndex)
 
-      // 计算累计超额
-      if (i > 0) {
-        const navReturn = nav.value / navData[i - 1].value
-        const indexReturn = index.value / indexData.find(idx => idx.date === navData[i - 1].date)?.value || 1
-        cumExcess *= navReturn / indexReturn
+      // 使用API提供的周度超额数据（如果当天有周度数据则更新，否则使用上次的值）
+      if (weeklyExcessMap.has(nav.date)) {
+        lastWeeklyExcess = weeklyExcessMap.get(nav.date)
       }
-      excessCurve.push((cumExcess - 1) * 100)
+      excessCurve.push(lastWeeklyExcess)
+
+      // 计算累计超额倍数（用于回撤计算）
+      cumExcess = 1 + lastWeeklyExcess / 100
 
       // 计算超额回撤
       maxCumExcess = Math.max(maxCumExcess, cumExcess)
@@ -777,21 +838,52 @@ const drawCharts = async (navData, indexData) => {
     containLabel: true
   }
 
+  // 准备分红标记点数据（作为单独的散点系列，显示在单位净值上）
+  const dividendScatterData = dividendData.value
+    .filter(d => d.exDividendDate) // 只显示有除息日的分红
+    .map(dividend => {
+      // 找到除息日在dates中的索引
+      const dateIndex = dates.findIndex(date => date === dividend.exDividendDate)
+      if (dateIndex === -1) return null
+
+      // 获取该日期的单位净值（分红标记显示在单位净值上）
+      const navValue = navValues[dateIndex]
+
+      return {
+        value: [dividend.exDividendDate, navValue],
+        dividend: {
+          exDividendDate: dividend.exDividendDate,
+          preDividendNav: dividend.preDividendNav,
+          dividendPerShare: dividend.dividendPerShare,
+          dividendDate: dividend.dividendDate
+        }
+      }
+    })
+    .filter(point => point !== null) // 过滤掉找不到对应日期的分红
+
+  console.log('分红散点数据:', dividendScatterData)
+
   // 净值曲线图配置
   const navOption = {
     tooltip: {
-      trigger: 'axis',
+      trigger: 'item',
       axisPointer: { type: 'cross' },
       formatter: function(params) {
-        let result = params[0].axisValue + '<br/>'
-        params.forEach(item => {
-          result += item.marker + item.seriesName + ': ' + Number(item.value).toFixed(2) + '<br/>'
-        })
-        return result
+        // 检查是否是分红散点
+        if (params.seriesName === '分红') {
+          const dividend = params.data.dividend
+          return `<div style="font-weight: bold; margin-bottom: 5px; color: #F56C6C;">● 分红信息</div>
+                  <div>基准日（除息日）: ${dividend.exDividendDate}</div>
+                  <div>除权前净值: ${dividend.preDividendNav ? dividend.preDividendNav.toFixed(4) : '--'}</div>
+                  <div>分红方案: ${dividend.dividendPerShare.toFixed(4)} 元/份</div>`
+        }
+
+        // 普通的净值和指数数据
+        return params.marker + params.seriesName + ': ' + Number(params.value[1] || params.value).toFixed(4)
       }
     },
     legend: {
-      data: ['产品净值', '指数（归一）'],
+      data: ['单位净值', '累计净值', '指数（归一）', '分红'],
       top: 10,
       left: 'center',
       textStyle: {
@@ -811,11 +903,19 @@ const drawCharts = async (navData, indexData) => {
     },
     series: [
       {
-        name: '产品净值',
+        name: '单位净值',
         type: 'line',
         data: navValues,
         smooth: true,
         lineStyle: { color: '#409EFF', width: 2 },
+        showSymbol: false
+      },
+      {
+        name: '累计净值',
+        type: 'line',
+        data: accumNavValues,
+        smooth: true,
+        lineStyle: { color: '#E6A23C', width: 2, type: 'dashed' },
         showSymbol: false
       },
       {
@@ -825,6 +925,27 @@ const drawCharts = async (navData, indexData) => {
         smooth: true,
         lineStyle: { color: '#909399', width: 1 },
         showSymbol: false
+      },
+      {
+        name: '分红',
+        type: 'scatter',
+        data: dividendScatterData,
+        symbolSize: 12,
+        itemStyle: {
+          color: '#F56C6C',
+          borderColor: '#FFF',
+          borderWidth: 2
+        },
+        emphasis: {
+          itemStyle: {
+            color: '#F56C6C',
+            borderColor: '#FFF',
+            borderWidth: 3,
+            shadowBlur: 10,
+            shadowColor: 'rgba(245, 108, 108, 0.5)'
+          }
+        },
+        z: 10  // 确保分红点显示在最上层
       }
     ]
   }
@@ -903,7 +1024,8 @@ const drawCharts = async (navData, indexData) => {
   }
 
   // 月度超额柱状图配置
-  const monthlyData = calculateMonthlyExcess(navData, indexData)
+  // 将API格式的月度超额数据转换为图表格式
+  const monthlyData = convertMonthlyExcessDataForChart(monthlyExcessData.value)
   const monthlyOption = {
     tooltip: {
       trigger: 'axis',
@@ -961,6 +1083,29 @@ const drawCharts = async (navData, indexData) => {
   console.log('monthlyOption.grid:', JSON.stringify(monthlyOption.grid))
 
   chartLoading.value = false
+}
+
+// 将API格式的月度超额数据转换为图表格式
+const convertMonthlyExcessDataForChart = (yearlyData) => {
+  const months = []
+  const values = []
+
+  // 按年份升序排列（从旧到新）
+  const sortedYears = [...yearlyData].sort((a, b) => a.year - b.year)
+
+  for (const yearRow of sortedYears) {
+    for (let m = 1; m <= 12; m++) {
+      const monthKey = `month${m}`
+      const monthValue = yearRow[monthKey]
+
+      if (monthValue !== null && monthValue !== undefined) {
+        months.push(`${yearRow.year}-${String(m).padStart(2, '0')}`)
+        values.push(monthValue)
+      }
+    }
+  }
+
+  return { months, values }
 }
 
 // 计算月度超额数据

@@ -46,12 +46,12 @@ class ProductAnalysisService:
             if not nav_records or len(nav_records) < 2:
                 raise ValueError(f"产品 {fund_code} 净值数据不足")
 
-            # 转换为DataFrame
+            # 转换为DataFrame（使用累计净值以避免分红影响）
             df = pd.DataFrame([
                 {
                     'date': record.nav_date,
-                    'nav': float(record.unit_nav),
-                    'accumulated_nav': float(record.accum_nav) if record.accum_nav else None
+                    'nav': float(record.accum_nav) if record.accum_nav else float(record.unit_nav),
+                    'unit_nav': float(record.unit_nav)  # 保留单位净值用于显示
                 }
                 for record in nav_records
             ])

@@ -164,7 +164,16 @@
           :row-class-name="getRowClassName"
           style="width: 100%"
         >
-          <el-table-column prop="fund_name" label="基金名称" width="380" />
+          <el-table-column label="基金名称" width="380">
+            <template #default="{ row }">
+              {{ row.short_name || row.fund_name }}
+            </template>
+          </el-table-column>
+          <el-table-column prop="volatility" label="波动率" min-width="1" align="center">
+            <template #default="{ row }">
+              <span v-if="row.rowType === 'data'">{{ formatPercent(row.volatility) }}</span>
+            </template>
+          </el-table-column>
           <el-table-column prop="sub_strategy" label="细分策略" min-width="1" align="center">
             <template #default="{ row }">
               <div v-if="row.rowType === 'data'" class="strategy-cell">
@@ -242,7 +251,16 @@
         class="position-table"
         style="width: 100%"
       >
-        <el-table-column prop="fund_name" label="基金名称" width="380" />
+        <el-table-column label="基金名称" width="380">
+          <template #default="{ row }">
+            {{ row.short_name || row.fund_name }}
+          </template>
+        </el-table-column>
+        <el-table-column prop="volatility" label="波动率" min-width="1" align="center">
+          <template #default="{ row }">
+            {{ formatPercent(row.volatility) }}
+          </template>
+        </el-table-column>
         <el-table-column prop="major_strategy" label="大类策略" min-width="1" align="center" />
         <el-table-column prop="sub_strategy" label="细分策略" min-width="1" align="center">
           <template #default="{ row }">
@@ -548,7 +566,10 @@ const getGroupedTableData = () => {
   
   // 定义策略排序优先级
   const strategyOrder = ['成长配置', '稳健配置', '尾部对冲', '底仓配置']
-  
+
+  // 定义细分策略排序优先级
+  const subStrategyOrder = ['主观多头', '量化多头', '股票多头', '股票多空']
+
   // 按策略分组
   const groupedPositions = {}
   positions.forEach(pos => {
@@ -567,9 +588,27 @@ const getGroupedTableData = () => {
         fund_name: strategy,
         rowType: 'header'
       })
-      
-      // 添加该策略下的持仓
+
+      // 添加该策略下的持仓，先按细分策略排序
       const groupPositions = groupedPositions[strategy]
+
+      // 按细分策略排序
+      groupPositions.sort((a, b) => {
+        const indexA = subStrategyOrder.indexOf(a.sub_strategy)
+        const indexB = subStrategyOrder.indexOf(b.sub_strategy)
+
+        // 如果都在排序列表中，按列表顺序排
+        if (indexA !== -1 && indexB !== -1) {
+          return indexA - indexB
+        }
+        // 如果只有a在列表中，a排前面
+        if (indexA !== -1) return -1
+        // 如果只有b在列表中，b排前面
+        if (indexB !== -1) return 1
+        // 都不在列表中，按字符串排序
+        return (a.sub_strategy || '').localeCompare(b.sub_strategy || '')
+      })
+
       tableData.push(...groupPositions)
       
       // 计算该策略小计
@@ -745,8 +784,8 @@ const formatMoney = (amount) => {
   if (amount == null || amount === '') return '--'
   const num = parseFloat(amount)
   return '¥' + num.toLocaleString('zh-CN', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0
   })
 }
 
@@ -754,8 +793,8 @@ const formatShares = (shares) => {
   if (shares == null || shares === '') return '--'
   const num = parseFloat(shares)
   return num.toLocaleString('zh-CN', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 6
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0
   })
 }
 

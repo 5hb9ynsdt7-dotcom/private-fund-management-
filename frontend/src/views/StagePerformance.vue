@@ -68,61 +68,7 @@
     <!-- 筛选控制 -->
     <el-card class="filter-section">
       <el-row :gutter="16" align="middle">
-        <el-col :span="6">
-          <el-input
-            v-model="searchForm.search"
-            placeholder="搜索产品简称或代码"
-            clearable
-            @keyup.enter="loadData"
-          >
-            <template #append>
-              <el-button @click="loadData">
-                <el-icon><Search /></el-icon>
-              </el-button>
-            </template>
-          </el-input>
-        </el-col>
-        <el-col :span="4">
-          <el-select
-            v-model="searchForm.majorStrategy"
-            placeholder="大类策略"
-            clearable
-            style="width: 100%"
-          >
-            <el-option label="成长配置" value="成长配置" />
-            <el-option label="底仓配置" value="底仓配置" />
-            <el-option label="尾部对冲" value="尾部对冲" />
-          </el-select>
-        </el-col>
-        <el-col :span="4">
-          <el-select
-            v-model="searchForm.subStrategy"
-            placeholder="细分策略"
-            clearable
-            style="width: 100%"
-          >
-            <el-option label="主观多头" value="主观多头" />
-            <el-option label="量化多头" value="量化多头" />
-            <el-option label="股票多头" value="股票多头" />
-            <el-option label="股票多空" value="股票多空" />
-            <el-option label="宏观策略" value="宏观策略" />
-            <el-option label="CTA策略" value="CTA策略" />
-            <el-option label="债券策略" value="债券策略" />
-          </el-select>
-        </el-col>
-        <el-col :span="4">
-          <el-select
-            v-model="searchForm.performanceFilter"
-            placeholder="涨跌筛选"
-            clearable
-            style="width: 100%"
-          >
-            <el-option label="仅上涨" value="positive" />
-            <el-option label="仅下跌" value="negative" />
-            <el-option label="持平" value="neutral" />
-          </el-select>
-        </el-col>
-        <el-col :span="8">
+        <el-col :span="12">
           <el-date-picker
             v-model="dateRange"
             type="daterange"
@@ -137,19 +83,19 @@
             clearable
           />
         </el-col>
-        <el-col :span="4">
+        <el-col :span="12">
           <el-button type="primary" @click="loadData">搜索</el-button>
           <el-button @click="resetSearch">重置</el-button>
-          <el-button 
-            v-if="selectedProducts.length > 0" 
-            type="danger" 
+          <el-button
+            v-if="selectedProducts.length > 0"
+            type="danger"
             @click="hideSelectedProducts"
           >
             隐藏选中 ({{ selectedProducts.length }})
           </el-button>
-          <el-button 
-            v-if="selectedProducts.length > 0" 
-            type="success" 
+          <el-button
+            v-if="selectedProducts.length > 0"
+            type="success"
             @click="downloadSelectedData"
           >
             <el-icon><Download /></el-icon>
@@ -354,14 +300,6 @@ const statistics = reactive({
   avgReturn: 0
 })
 
-// 搜索表单
-const searchForm = reactive({
-  search: '',
-  majorStrategy: '',
-  subStrategy: '',
-  performanceFilter: ''
-})
-
 // 日期范围选择
 const dateRange = ref([])
 const selectedPeriodDisplay = ref('近一周')
@@ -416,47 +354,18 @@ const pagination = reactive({
 // 计算显示数据（排除隐藏的产品）
 const displayData = computed(() => {
   let filtered = tableData.value.filter(item => !hiddenProducts.value.has(item.fund_code))
-  
-  // 应用筛选条件
-  if (searchForm.search) {
-    const search = searchForm.search.toLowerCase()
-    filtered = filtered.filter(item => 
-      item.short_name?.toLowerCase().includes(search) ||
-      item.fund_code?.toLowerCase().includes(search)
-    )
-  }
-  
-  if (searchForm.majorStrategy) {
-    filtered = filtered.filter(item => item.major_strategy === searchForm.majorStrategy)
-  }
-  
-  if (searchForm.subStrategy) {
-    filtered = filtered.filter(item => item.sub_strategy === searchForm.subStrategy)
-  }
-  
-  if (searchForm.performanceFilter) {
-    filtered = filtered.filter(item => {
-      const returnValue = parseFloat(item.weekly_return) || 0
-      switch (searchForm.performanceFilter) {
-        case 'positive': return returnValue > 0
-        case 'negative': return returnValue < 0
-        case 'neutral': return returnValue === 0
-        default: return true
-      }
-    })
-  }
-  
+
   // 三级排序逻辑
   filtered.sort((a, b) => {
     // 第一级：大类策略排序
     const strategyOrder = ['成长配置', '底仓配置', '尾部对冲']
-    const strategyA = strategyOrder.indexOf(a.major_strategy) 
+    const strategyA = strategyOrder.indexOf(a.major_strategy)
     const strategyB = strategyOrder.indexOf(b.major_strategy)
-    
+
     if (strategyA !== strategyB) {
       return (strategyA === -1 ? 999 : strategyA) - (strategyB === -1 ? 999 : strategyB)
     }
-    
+
     // 第二级：细分策略排序
     let subStrategyOrder = []
     if (a.major_strategy === '成长配置') {
@@ -464,25 +373,25 @@ const displayData = computed(() => {
     } else if (a.major_strategy === '尾部对冲') {
       subStrategyOrder = ['宏观策略', 'CTA策略']
     }
-    
+
     if (subStrategyOrder.length > 0) {
       const subStrategyA = subStrategyOrder.indexOf(a.sub_strategy)
       const subStrategyB = subStrategyOrder.indexOf(b.sub_strategy)
-      
+
       if (subStrategyA !== subStrategyB) {
         return (subStrategyA === -1 ? 999 : subStrategyA) - (subStrategyB === -1 ? 999 : subStrategyB)
       }
     }
-    
+
     // 第三级：涨跌幅降序排序
     const returnA = parseFloat(a.weekly_return) || 0
     const returnB = parseFloat(b.weekly_return) || 0
     return returnB - returnA
   })
-  
+
   // 更新分页信息
   pagination.total = filtered.length
-  
+
   // 分页处理
   const start = (pagination.page - 1) * pagination.pageSize
   const end = start + pagination.pageSize
@@ -494,17 +403,14 @@ const loadData = async () => {
   tableLoading.value = true
   try {
     let response
-    
+
     if (dateRange.value && dateRange.value.length === 2) {
       // 使用自定义时间范围
       const params = {
         start_date: dateRange.value[0],
-        end_date: dateRange.value[1],
-        search: searchForm.search || undefined,
-        major_strategy: searchForm.majorStrategy || undefined,
-        sub_strategy: searchForm.subStrategy || undefined
+        end_date: dateRange.value[1]
       }
-      
+
       response = await stagePerformanceAPI.getPeriodPerformance(params)
       
       // 处理自定义期间返回的数据格式
@@ -542,13 +448,9 @@ const loadData = async () => {
     } else {
       // 使用默认近一周数据
       const params = {
-        search: searchForm.search || undefined,
-        major_strategy: searchForm.majorStrategy || undefined,
-        sub_strategy: searchForm.subStrategy || undefined,
-        performance_filter: searchForm.performanceFilter || undefined,
         days_limit: 7
       }
-      
+
       response = await stagePerformanceAPI.getWeeklyPerformance(params)
     }
     
@@ -761,12 +663,6 @@ const onDateRangeChange = (dates) => {
 
 // 搜索处理
 const resetSearch = () => {
-  Object.assign(searchForm, {
-    search: '',
-    majorStrategy: '',
-    subStrategy: '',
-    performanceFilter: ''
-  })
   dateRange.value = []
   selectedPeriodDisplay.value = '近一周'
   pagination.page = 1

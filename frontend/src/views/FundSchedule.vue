@@ -60,14 +60,18 @@
       >
         <el-table-column type="selection" width="55" />
         <el-table-column prop="fund_code" label="基金代码" width="120" />
-        <el-table-column prop="fund_name" label="基金名称" width="180" />
-        <el-table-column prop="main_strategy" label="大类策略" width="150">
+        <el-table-column prop="fund_name" label="基金简称" width="240">
+          <template #default="{ row }">
+            {{ getFundShortName(row.fund_name) }}
+          </template>
+        </el-table-column>
+        <el-table-column prop="main_strategy" label="大类策略" width="120">
           <template #default="{ row }">
             <el-select
               v-model="row.main_strategy"
               placeholder="选择大类策略"
               size="small"
-              style="width: 130px"
+              style="width: 100px"
               @change="() => handleStrategyChange(row)"
             >
               <el-option label="成长配置" value="成长配置" />
@@ -76,13 +80,13 @@
             </el-select>
           </template>
         </el-table-column>
-        <el-table-column prop="sub_strategy" label="细分策略" width="150">
+        <el-table-column prop="sub_strategy" label="细分策略" width="120">
           <template #default="{ row }">
             <el-input
               v-model="row.sub_strategy"
               placeholder="输入细分策略"
               size="small"
-              style="width: 130px"
+              style="width: 100px"
               @blur="() => handleStrategyChange(row)"
               @keyup.enter="() => handleStrategyChange(row)"
             />
@@ -280,6 +284,24 @@
         </div>
       </template>
 
+      <!-- 策略颜色图例 -->
+      <div class="strategy-legend">
+        <span class="legend-title">策略图例：</span>
+        <div class="legend-items">
+          <span
+            v-for="(color, strategy) in strategyColors"
+            :key="strategy"
+            class="legend-item"
+          >
+            <span
+              class="legend-color"
+              :style="{ backgroundColor: color }"
+            ></span>
+            <span class="legend-text">{{ strategy }}</span>
+          </span>
+        </div>
+      </div>
+
       <div class="calendar-grid">
         <div class="calendar-header">
           <div class="calendar-day-header">周日</div>
@@ -306,7 +328,10 @@
                 trigger="hover"
               >
                 <template #reference>
-                  <div class="fund-short-name">
+                  <div
+                    class="fund-short-name"
+                    :style="{ backgroundColor: getStrategyColor(fund.sub_strategy) }"
+                  >
                     {{ getFundShortName(fund.fund_name) }}
                   </div>
                 </template>
@@ -356,7 +381,10 @@
                 trigger="hover"
               >
                 <template #reference>
-                  <div class="fund-short-name redemption">
+                  <div
+                    class="fund-short-name"
+                    :style="{ backgroundColor: getStrategyColor(fund.sub_strategy, true) }"
+                  >
                     {{ getFundShortName(fund.fund_name) }}
                   </div>
                 </template>
@@ -380,6 +408,21 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import axios from 'axios'
 
 const API_BASE = import.meta.env.PROD ? '' : 'http://localhost:8000'
+
+// 细分策略颜色映射
+const strategyColors = {
+  'CTA策略': '#9C27B0',      // 紫色
+  '主观多头': '#F44336',      // 红色
+  '债券策略': '#4CAF50',      // 绿色
+  '多策略': '#FF9800',        // 橙色
+  '宏观策略': '#2196F3',      // 蓝色
+  '稳健策略': '#00BCD4',      // 青色
+  '股债混合': '#FFC107',      // 金色
+  '股票多头': '#E91E63',      // 粉红
+  '股票多空': '#795548',      // 棕色
+  '量化多头': '#3F51B5',      // 靛蓝
+  '量化稳健': '#009688',      // 青绿
+}
 
 const loading = ref(false)
 const scheduleRules = ref([])
@@ -796,22 +839,74 @@ function getFundShortName(fullName) {
 
   let shortName = fullName
 
-  // 去掉"龙舟-"前缀
-  shortName = shortName.replace(/^龙舟-/, '')
+  // 去掉"龙舟-"前缀（支持多种分隔符）
+  shortName = shortName.replace(/^龙舟[-—\s]*/, '')
 
-  // 去掉"私募证券投资基金"及其后面的所有内容
-  // 匹配"私募证券投资基金"后面可能跟着的：A1号、Z1号、I期、C类等
-  shortName = shortName.replace(/私募证券投资基金.*$/, '')
+  // 检查是否有"私募证券投资基金"后面的后缀
+  const match = shortName.match(/(.+?)私募证券投资基金(.*)$/)
 
-  // 去掉尾部可能残留的数字+期（如果没被上面匹配到）
-  shortName = shortName.replace(/[一二三四五六七八九十]期$/, '')
-  shortName = shortName.replace(/\d+期$/, '')
+  if (match) {
+    const baseName = match[1].trim() // 基金名称主体部分
+    let suffix = match[2].trim() // 后缀部分（如Z1号、C等）
+
+    // 清理后缀中可能的多余空格或符号
+    suffix = suffix.replace(/^[-\s]+/, '').replace(/[-\s]+$/, '')
+
+    if (suffix) {
+      // 有后缀，添加中文括号
+      shortName = `${baseName}（${suffix}）`
+    } else {
+      // 无后缀
+      shortName = baseName
+    }
+  } else {
+    // 没有匹配到"私募证券投资基金"，尝试其他后缀
+    shortName = shortName.replace(/私募投资基金.*$/, '')
+    shortName = shortName.replace(/证券投资基金.*$/, '')
+    shortName = shortName.replace(/投资基金.*$/, '')
+  }
 
   // 去掉尾部的"-"或空格
   shortName = shortName.replace(/[-\s]+$/, '')
 
   return shortName.trim()
 }
+
+// 根据细分策略获取对应颜色
+function getStrategyColor(subStrategy, isDarker = false) {
+  // 如果策略为空或未定义，返回默认颜色
+  if (!subStrategy) {
+    return isDarker ? '#B0BEC5' : '#CFD8DC' // 灰色
+  }
+
+  // 获取策略对应的颜色
+  const baseColor = strategyColors[subStrategy]
+
+  if (!baseColor) {
+    // 未匹配到策略，返回默认颜色
+    return isDarker ? '#B0BEC5' : '#CFD8DC' // 灰色
+  }
+
+  // 如果需要更深的颜色（用于赎回日历），调暗基础颜色
+  if (isDarker) {
+    return adjustColorBrightness(baseColor, -20)
+  }
+
+  return baseColor
+}
+
+// 调整颜色亮度
+function adjustColorBrightness(hex, percent) {
+  // 将十六进制转换为RGB
+  const num = parseInt(hex.replace('#', ''), 16)
+  const r = Math.max(0, Math.min(255, (num >> 16) + percent))
+  const g = Math.max(0, Math.min(255, ((num >> 8) & 0x00FF) + percent))
+  const b = Math.max(0, Math.min(255, (num & 0x0000FF) + percent))
+
+  // 转换回十六进制
+  return '#' + ((r << 16) | (g << 8) | b).toString(16).padStart(6, '0')
+}
+
 </script>
 
 <style scoped>
@@ -847,6 +942,45 @@ function getFundShortName(fullName) {
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+.strategy-legend {
+  margin-bottom: 16px;
+  padding: 12px;
+  background-color: #f5f7fa;
+  border-radius: 4px;
+}
+
+.legend-title {
+  font-weight: 600;
+  color: #303133;
+  margin-right: 12px;
+}
+
+.legend-items {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.legend-color {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+.legend-text {
+  font-size: 13px;
+  color: #606266;
 }
 
 .action-buttons {
@@ -922,7 +1056,6 @@ function getFundShortName(fullName) {
 }
 
 .fund-short-name {
-  background-color: #e88a8a;
   color: white;
   font-size: 12px;
   padding: 4px 8px;
@@ -933,18 +1066,13 @@ function getFundShortName(fullName) {
   text-align: center;
   word-break: break-all;
   line-height: 1.4;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
 }
 
 .fund-short-name:hover {
-  background-color: #d97777;
   transform: scale(1.05);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+  filter: brightness(0.9);
 }
 
-.fund-short-name.redemption {
-  background-color: #e6a23c;
-}
-
-.fund-short-name.redemption:hover {
-  background-color: #cf9236;
-}
 </style>

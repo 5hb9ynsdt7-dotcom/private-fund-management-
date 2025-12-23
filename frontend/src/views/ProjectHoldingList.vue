@@ -214,26 +214,21 @@ const formatDate = (dateStr) => {
   })
 }
 
-// 多级排序逻辑
+// 多级排序逻辑（仅显示主观多头策略）
 const sortedProjects = computed(() => {
-  return [...projects.value].sort((a, b) => {
+  // 第一步：过滤只保留主观多头策略
+  const filteredProjects = projects.value.filter(project => {
+    return project.sub_strategy === '主观多头'
+  })
+
+  // 第二步：对过滤后的项目进行排序
+  return [...filteredProjects].sort((a, b) => {
     // 第一级：按大类策略排序
     const mainStrategyOrder = getMainStrategyOrder(a.main_strategy, b.main_strategy)
     if (mainStrategyOrder !== 0) return mainStrategyOrder
-    
-    // 第二级：成长策略内部按子策略排序
-    if (a.main_strategy === '成长策略' || a.main_strategy === '成长配置') {
-      const subStrategyOrder = getSubStrategyOrder(a.sub_strategy, b.sub_strategy)
-      if (subStrategyOrder !== 0) return subStrategyOrder
-      
-      // 第三级：主观多头内部按持仓市值从大到小排序
-      if (a.sub_strategy === '主观多头' && b.sub_strategy === '主观多头') {
-        return (b.total_market_value || 0) - (a.total_market_value || 0)
-      }
-    }
-    
-    // 默认按项目名称排序
-    return a.project_name.localeCompare(b.project_name)
+
+    // 第二级：按持仓市值从大到小排序
+    return (b.total_market_value || 0) - (a.total_market_value || 0)
   })
 })
 
@@ -245,17 +240,6 @@ const getMainStrategyOrder = (a, b) => {
     '稳健策略': 2,
     '固收策略': 2,
     '尾部对冲': 3
-  }
-  return (order[a] || 999) - (order[b] || 999)
-}
-
-// 子策略排序顺序（成长策略内部）
-const getSubStrategyOrder = (a, b) => {
-  const order = {
-    '主观多头': 1,
-    '股票多空': 2,
-    '股债混合': 3,
-    '量化多头': 4
   }
   return (order[a] || 999) - (order[b] || 999)
 }

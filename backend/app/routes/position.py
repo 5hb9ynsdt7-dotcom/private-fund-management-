@@ -8,10 +8,11 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func, desc, and_, or_
 from typing import List, Optional
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 import logging
 import pandas as pd
+import numpy as np
 from io import BytesIO
 from pydantic import BaseModel
 
@@ -25,6 +26,7 @@ from ..schemas.position import (
 from ..schemas.common import APIResponse, ErrorResponse
 from ..schemas.dividend import ClientDividendUploadResponse
 from ..services.position_service import PositionAnalysisService
+from ..services.product_analysis_service import ProductAnalysisService
 from ..models import Position, Client, Fund, Nav, DateConverter, ClientDividend, Strategy
 
 logger = logging.getLogger(__name__)
@@ -414,13 +416,22 @@ async def get_client_list(
                     # 获取最新净值
                     latest_nav = db.query(Nav).filter(Nav.fund_code == position.fund_code)\
                                               .order_by(desc(Nav.nav_date)).first()
-                    
+
                     if latest_nav:
                         market_value = position.shares * latest_nav.unit_nav
                         total_market_value += market_value
-                        
+
                         if position.cost_with_fee:
-                            total_unrealized_pnl += (market_value - position.cost_with_fee)
+                            # 获取该持仓的现金分红累计金额
+                            dividend_amount = db.query(func.sum(ClientDividend.confirmed_amount))\
+                                               .filter(and_(
+                                                   ClientDividend.group_id == client.group_id,
+                                                   ClientDividend.fund_code == position.fund_code,
+                                                   ClientDividend.transaction_type == '现金红利'
+                                               )).scalar() or Decimal('0')
+
+                            # 持有收益 = 市值 - 成本 - 分红
+                            total_unrealized_pnl += (market_value - position.cost_with_fee - dividend_amount)
             
             # 计算收益率
             unrealized_pnl_ratio = Decimal('0')
@@ -550,35 +561,57 @@ async def get_client_position_detail(
             if start_date and end_date and position.shares:
                 # 确定期初净值：如果买入时间在阶段内，使用买入净值；否则使用开始日净值
                 first_buy_date = position.first_buy_date or position.stock_date
-                
+                start_nav_record = None  # 保存净值记录对象
+
                 if first_buy_date and first_buy_date > start_date:
                     # 买入时间在阶段中间，使用买入净值作为期初净值
                     period_start_nav = buy_nav if buy_nav else None
+                    # 使用买入日期作为起始日期
+                    start_nav_date = first_buy_date if buy_nav else None
                 else:
                     # 买入时间在阶段开始前，获取开始日净值
                     start_nav_query = db.query(Nav).filter(
                         and_(Nav.fund_code == position.fund_code, Nav.nav_date >= start_date)
                     ).order_by(Nav.nav_date)
-                    start_nav = start_nav_query.first()
-                    period_start_nav = start_nav.unit_nav if start_nav else None
-                
+                    start_nav_record = start_nav_query.first()
+                    period_start_nav = start_nav_record.unit_nav if start_nav_record else None
+                    start_nav_date = start_nav_record.nav_date if start_nav_record else None
+
                 # 获取结束日净值：取≤结束日期的最近净值
                 end_nav_query = db.query(Nav).filter(
                     and_(Nav.fund_code == position.fund_code, Nav.nav_date <= end_date)
                 ).order_by(desc(Nav.nav_date))
                 end_nav = end_nav_query.first()
                 period_end_nav = end_nav.unit_nav if end_nav else None
-                
-                if period_start_nav and period_end_nav:
-                    # 阶段收益 = (结束日净值 - 期初净值) × 持仓份额
-                    period_return = (period_end_nav - period_start_nav) * position.shares
-                    total_period_return += period_return  # 累加到总阶段收益
+                end_nav_date = end_nav.nav_date if end_nav else None
+
+                # 检查净值数据是否充足：
+                # 1. 期初和期末净值都存在
+                # 2. 期初和期末净值日期不同（如果相同，说明区间内没有净值更新）
+                if period_start_nav and period_end_nav and start_nav_date and end_nav_date:
+                    if start_nav_date != end_nav_date:
+                        # 区间内有净值更新，可以计算收益
+                        period_return = (period_end_nav - period_start_nav) * position.shares
+                        total_period_return += period_return
+                    # 否则 period_return 保持为 None（期初期末是同一天，说明区间内无更新）
             
             # 策略信息
             major_strategy = strategy.main_strategy if strategy else "未分类"
             sub_strategy = strategy.sub_strategy if strategy else "未知策略"
             is_qd = strategy.is_qd if strategy else False
-            
+
+            # 获取波动率（从产品分析服务）
+            volatility = None
+            try:
+                product_service = ProductAnalysisService(db)
+                analysis_data = product_service.analyze_product(position.fund_code)
+                # 从基础指标中提取波动率
+                if analysis_data and 'basic_metrics' in analysis_data:
+                    volatility = analysis_data['basic_metrics'].get('volatility')
+            except Exception as e:
+                logger.warning(f"获取波动率失败 fund_code={position.fund_code}: {str(e)}")
+                volatility = None
+
             # 统计策略分布
             if current_market_value:
                 # 持仓分布（按基金）
@@ -596,6 +629,8 @@ async def get_client_position_detail(
                 group_id=position.group_id,
                 fund_code=position.fund_code,
                 fund_name=fund.fund_name if fund else None,
+                short_name=fund.short_name if fund else None,  # 基金简称
+                volatility=volatility,  # 波动率(年化)
                 first_buy_date=position.first_buy_date,  # 首次买入日期
                 cost_with_fee=position.cost_with_fee,  # 持仓成本(含费)
                 cost_without_fee=position.cost_without_fee,  # 投资金额(不含费)
@@ -1364,6 +1399,7 @@ async def process_client_dividend_excel(file_content: bytes, filename: str, over
             '基金名称': 'fund_name',
             '交易类型': 'transaction_type',
             '确认金额(原币)': 'confirmed_amount',
+            '确认金额(原币)含+-': 'confirmed_amount',  # 新增：支持含+-符号的列名
             '确认金额': 'confirmed_amount',
             '确认份额': 'confirmed_shares',
             '确认日期': 'confirmed_date',
