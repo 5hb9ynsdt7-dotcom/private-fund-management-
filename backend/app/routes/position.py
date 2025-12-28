@@ -614,13 +614,13 @@ async def get_client_position_detail(
 
             # 统计策略分布
             if current_market_value:
-                # 持仓分布（按基金）
-                fund_display_name = fund.fund_name or position.fund_code
+                # 持仓分布（按基金）- 优先使用简称，其次全称，最后基金代码
+                fund_display_name = fund.short_name or fund.fund_name or position.fund_code
                 holding_stats[fund_display_name] = holding_stats.get(fund_display_name, 0) + float(current_market_value)
-                
+
                 # 大类策略分布
                 major_strategy_stats[major_strategy] = major_strategy_stats.get(major_strategy, 0) + float(current_market_value)
-                
+
                 # 细分策略分布
                 sub_strategy_stats[sub_strategy] = sub_strategy_stats.get(sub_strategy, 0) + float(current_market_value)
             

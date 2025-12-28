@@ -300,8 +300,8 @@ async def create_or_update_strategy(
         # 1. 基金验证：检查基金是否存在，不存在则自动创建
         fund = db.query(Fund).filter(Fund.fund_code == strategy_data.fund_code).first()
         if not fund:
-            # 自动创建基金（使用默认名称）
-            fund_name = f"基金_{strategy_data.fund_code}"
+            # 自动创建基金（使用提供的基金名称或默认名称）
+            fund_name = strategy_data.fund_name if strategy_data.fund_name else f"基金_{strategy_data.fund_code}"
             short_name = Fund.generate_short_name(fund_name)  # 自动生成简称
             new_fund = Fund(
                 fund_code=strategy_data.fund_code,
@@ -312,6 +312,12 @@ async def create_or_update_strategy(
             db.flush()  # 立即写入数据库，但不提交事务
             fund = new_fund
             logger.info(f"自动创建基金: {strategy_data.fund_code} - {fund_name} (简称: {short_name})")
+        else:
+            # 如果基金已存在，且提供了fund_name，则更新基金名称
+            if strategy_data.fund_name and strategy_data.fund_name.strip():
+                fund.fund_name = strategy_data.fund_name.strip()
+                fund.short_name = Fund.generate_short_name(fund.fund_name)
+                logger.info(f"更新基金名称: {strategy_data.fund_code} - {fund.fund_name} (简称: {fund.short_name})")
 
         # 2. 检查策略是否已存在
         existing_strategy = db.query(Strategy).filter(Strategy.fund_code == strategy_data.fund_code).first()

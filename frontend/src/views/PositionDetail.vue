@@ -563,7 +563,7 @@ const renderCharts = () => {
 const getGroupedTableData = () => {
   const positions = [...positionData.value.positions]
   const tableData = []
-  
+
   // 定义策略排序优先级
   const strategyOrder = ['成长配置', '稳健配置', '尾部对冲', '底仓配置']
 
@@ -579,8 +579,8 @@ const getGroupedTableData = () => {
     }
     groupedPositions[strategy].push({...pos, rowType: 'data'})
   })
-  
-  // 按策略顺序排列
+
+  // 首先按优先顺序排列已定义的策略
   strategyOrder.forEach(strategy => {
     if (groupedPositions[strategy]) {
       // 添加策略分组头
@@ -610,7 +610,7 @@ const getGroupedTableData = () => {
       })
 
       tableData.push(...groupPositions)
-      
+
       // 计算该策略小计
       const subtotal = calculateGroupSubtotal(groupPositions)
       tableData.push({
@@ -623,7 +623,48 @@ const getGroupedTableData = () => {
       })
     }
   })
-  
+
+  // 处理其他未在优先列表中的策略（按策略名称排序）
+  const otherStrategies = Object.keys(groupedPositions)
+    .filter(strategy => !strategyOrder.includes(strategy))
+    .sort()
+
+  otherStrategies.forEach(strategy => {
+    // 添加策略分组头
+    tableData.push({
+      fund_name: strategy,
+      rowType: 'header'
+    })
+
+    // 添加该策略下的持仓，按细分策略和买入日期排序
+    const groupPositions = groupedPositions[strategy]
+
+    groupPositions.sort((a, b) => {
+      const indexA = subStrategyOrder.indexOf(a.sub_strategy)
+      const indexB = subStrategyOrder.indexOf(b.sub_strategy)
+
+      if (indexA !== -1 && indexB !== -1) {
+        return indexA - indexB
+      }
+      if (indexA !== -1) return -1
+      if (indexB !== -1) return 1
+      return (a.sub_strategy || '').localeCompare(b.sub_strategy || '')
+    })
+
+    tableData.push(...groupPositions)
+
+    // 计算该策略小计
+    const subtotal = calculateGroupSubtotal(groupPositions)
+    tableData.push({
+      fund_name: `${strategy}小计`,
+      cost_with_fee: subtotal.totalCost,
+      holding_return: subtotal.totalReturn,
+      holding_return_rate: subtotal.returnRate,
+      period_return: subtotal.totalPeriodReturn,
+      rowType: 'summary'
+    })
+  })
+
   // 添加总计行
   const grandTotal = calculateGrandTotal(positions)
   tableData.push({
@@ -634,7 +675,7 @@ const getGroupedTableData = () => {
     period_return: grandTotal.totalPeriodReturn,
     rowType: 'total'
   })
-  
+
   return tableData
 }
 

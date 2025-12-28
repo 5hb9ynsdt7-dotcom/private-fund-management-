@@ -112,9 +112,27 @@ const routes = [
   },
   {
     path: '/public-fund',
-    name: 'PublicFund',
-    component: () => import('../views/PublicFund.vue'),
-    meta: { title: '公募基金' }
+    name: 'PublicFundLibrary',
+    component: () => import('../views/PublicFund/FundLibrary.vue'),
+    meta: { title: '公募基金库' }
+  },
+  {
+    path: '/public-fund/detail/:fundCode',
+    name: 'PublicFundDetail',
+    component: () => import('../views/PublicFund/FundDetail.vue'),
+    meta: { title: '基金详情' }
+  },
+  {
+    path: '/portfolio',
+    name: 'PortfolioList',
+    component: () => import('../views/Portfolio/PortfolioList.vue'),
+    meta: { title: '实盘组合' }
+  },
+  {
+    path: '/portfolio/:id',
+    name: 'PortfolioDetail',
+    component: () => import('../views/Portfolio/PortfolioDetail.vue'),
+    meta: { title: '组合详情' }
   }
 ]
 

@@ -72,6 +72,11 @@
             <el-icon><Money /></el-icon>
             <span>公募基金</span>
           </el-menu-item>
+
+          <el-menu-item index="/portfolio">
+            <el-icon><TrendCharts /></el-icon>
+            <span>实盘组合</span>
+          </el-menu-item>
         </el-menu>
       </el-aside>
 
