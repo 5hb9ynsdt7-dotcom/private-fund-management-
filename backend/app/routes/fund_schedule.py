@@ -34,6 +34,7 @@ class FundScheduleRuleCreate(BaseModel):
     subscription_rule: Optional[str] = None
     redemption_rule: Optional[str] = None
     lock_period: Optional[str] = None
+    fee_structure: Optional[str] = None
 
 
 class FundScheduleRuleResponse(BaseModel):
@@ -44,6 +45,7 @@ class FundScheduleRuleResponse(BaseModel):
     subscription_rule: Optional[str] = None
     redemption_rule: Optional[str] = None
     lock_period: Optional[str] = None
+    fee_structure: Optional[str] = None
     main_strategy: Optional[str] = None
     sub_strategy: Optional[str] = None
     created_at: Optional[datetime] = None
@@ -105,10 +107,15 @@ async def create_or_update_rule(
         ).first()
 
         if existing_rule:
-            # 更新现有规则
-            existing_rule.subscription_rule = rule_data.subscription_rule
-            existing_rule.redemption_rule = rule_data.redemption_rule
-            existing_rule.lock_period = rule_data.lock_period
+            # 更新现有规则，只更新提供了值的字段
+            if rule_data.subscription_rule is not None:
+                existing_rule.subscription_rule = rule_data.subscription_rule
+            if rule_data.redemption_rule is not None:
+                existing_rule.redemption_rule = rule_data.redemption_rule
+            if rule_data.lock_period is not None:
+                existing_rule.lock_period = rule_data.lock_period
+            if rule_data.fee_structure is not None:
+                existing_rule.fee_structure = rule_data.fee_structure
             existing_rule.updated_at = datetime.now()
             message = f"成功更新基金 {rule_data.fund_code} 的档期规则"
         else:
@@ -117,7 +124,8 @@ async def create_or_update_rule(
                 fund_code=rule_data.fund_code,
                 subscription_rule=rule_data.subscription_rule,
                 redemption_rule=rule_data.redemption_rule,
-                lock_period=rule_data.lock_period
+                lock_period=rule_data.lock_period,
+                fee_structure=rule_data.fee_structure
             )
             db.add(new_rule)
             message = f"成功创建基金 {rule_data.fund_code} 的档期规则"
@@ -131,7 +139,8 @@ async def create_or_update_rule(
                 "fund_code": rule_data.fund_code,
                 "subscription_rule": rule_data.subscription_rule,
                 "redemption_rule": rule_data.redemption_rule,
-                "lock_period": rule_data.lock_period
+                "lock_period": rule_data.lock_period,
+                "fee_structure": rule_data.fee_structure
             }
         )
 
@@ -173,6 +182,7 @@ async def get_all_rules(db: Session = Depends(get_db)):
                 "subscription_rule": rule.subscription_rule,
                 "redemption_rule": rule.redemption_rule,
                 "lock_period": rule.lock_period,
+                "fee_structure": rule.fee_structure,
                 "main_strategy": main_strategy,
                 "sub_strategy": sub_strategy,
                 "created_at": rule.created_at.isoformat() if rule.created_at else None,
@@ -233,6 +243,7 @@ async def get_rule_by_fund(
                 "subscription_rule": rule.subscription_rule,
                 "redemption_rule": rule.redemption_rule,
                 "lock_period": rule.lock_period,
+                "fee_structure": rule.fee_structure,
                 "main_strategy": main_strategy,
                 "sub_strategy": sub_strategy,
                 "created_at": rule.created_at.isoformat() if rule.created_at else None,

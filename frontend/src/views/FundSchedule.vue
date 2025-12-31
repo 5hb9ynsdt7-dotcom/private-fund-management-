@@ -33,6 +33,20 @@
           <div v-if="selectedRules.length > 0" class="batch-actions">
             <span class="selected-count">已选择 {{ selectedRules.length }} 项</span>
             <el-button
+              type="warning"
+              size="small"
+              @click="batchSetDefaultFee"
+            >
+              批量设置默认费用
+            </el-button>
+            <el-button
+              type="primary"
+              size="small"
+              @click="showOrderGuide"
+            >
+              添加订单指引
+            </el-button>
+            <el-button
               type="success"
               size="small"
               @click="showSelectedInCalendar"
@@ -95,6 +109,17 @@
         <el-table-column prop="subscription_rule" label="申购规则" min-width="180" />
         <el-table-column prop="redemption_rule" label="赎回规则" min-width="180" />
         <el-table-column prop="lock_period" label="锁定期" width="120" />
+        <el-table-column label="费用" width="180">
+          <template #default="scope">
+            <el-button
+              type="primary"
+              size="small"
+              @click="editFeeStructure(scope.row)"
+            >
+              {{ getFeeStructureSummary(scope.row.fee_structure) }}
+            </el-button>
+          </template>
+        </el-table-column>
         <el-table-column label="操作" width="180" fixed="right">
           <template #default="scope">
             <div class="action-buttons">
@@ -256,6 +281,269 @@
       </template>
     </el-dialog>
 
+    <!-- 费用结构编辑对话框 -->
+    <el-dialog
+      v-model="feeDialogVisible"
+      title="编辑费用结构"
+      width="700px"
+    >
+      <div style="margin-bottom: 20px">
+        <strong>产品：</strong>{{ feeStructureForm.fund_code }} - {{ feeStructureForm.fund_name }}
+      </div>
+
+      <el-table :data="feeStructureForm.fee_tiers" border style="width: 100%">
+        <el-table-column label="费用类型" width="120">
+          <template #default="{ row }">
+            <el-select v-model="row.fee_type" size="small">
+              <el-option label="申购费" value="申购费" />
+              <el-option label="认购费" value="认购费" />
+              <el-option label="赎回费" value="赎回费" />
+              <el-option label="管理费" value="管理费" />
+            </el-select>
+          </template>
+        </el-table-column>
+        <el-table-column label="最小金额（万元）" width="150">
+          <template #default="{ row }">
+            <el-input-number
+              v-model="row.amount_min"
+              :min="0"
+              :precision="2"
+              size="small"
+              style="width: 100%"
+            />
+          </template>
+        </el-table-column>
+        <el-table-column label="最大金额（万元）" width="150">
+          <template #default="{ row }">
+            <el-input-number
+              v-model="row.amount_max"
+              :min="0"
+              :precision="2"
+              size="small"
+              placeholder="无上限"
+              style="width: 100%"
+            />
+          </template>
+        </el-table-column>
+        <el-table-column label="费率（%）" width="120">
+          <template #default="{ row }">
+            <el-input-number
+              v-model="row.rate"
+              :min="0"
+              :max="100"
+              :precision="2"
+              size="small"
+              style="width: 100%"
+            />
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="80">
+          <template #default="{ $index }">
+            <el-button
+              type="danger"
+              size="small"
+              @click="removeFeeTier($index)"
+            >
+              删除
+            </el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+
+      <div style="margin-top: 10px">
+        <el-button type="primary" size="small" @click="addFeeTier">
+          添加档位
+        </el-button>
+      </div>
+
+      <div style="margin-top: 20px; padding: 10px; background-color: #f5f7fa; border-radius: 4px">
+        <div style="font-weight: 600; margin-bottom: 8px">费用预览：</div>
+        <div v-for="(tier, index) in feeStructureForm.fee_tiers" :key="index" style="margin-bottom: 4px">
+          <span style="color: #606266">
+            {{ tier.fee_type }}：
+            {{ formatAmount(tier.amount_min) }} ≤ M
+            <span v-if="tier.amount_max !== null && tier.amount_max !== ''">
+              &lt; {{ formatAmount(tier.amount_max) }}
+            </span>
+            <span v-else>（无上限）</span>
+            → {{ tier.rate }}%
+          </span>
+        </div>
+        <div v-if="feeStructureForm.fee_tiers.length === 0" style="color: #909399">
+          暂无费用档位
+        </div>
+      </div>
+
+      <template #footer>
+        <el-button @click="feeDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="saveFeeStructure">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 订单指引对话框 -->
+    <el-dialog
+      v-model="orderGuideDialogVisible"
+      title="订单指引"
+      width="1200px"
+      @close="resetOrderGuide"
+    >
+      <div style="margin-bottom: 15px">
+        <el-input
+          v-model="orderGuideTitle"
+          placeholder="输入标题，如：XX总的订单指引"
+          style="width: 400px"
+        />
+      </div>
+
+      <div ref="orderGuideExportRef" style="background: white; padding: 20px;">
+        <div style="margin-bottom: 15px; text-align: center;">
+          <h2 style="margin: 0; font-size: 20px; font-weight: bold;">{{ orderGuideTitle }}</h2>
+        </div>
+
+        <el-table :data="orderGuideItems" border style="width: 100%;" max-height="500" show-summary :summary-method="getOrderGuideSummary">
+          <el-table-column label="产品简称" min-width="180" prop="fund_short_name" fixed />
+          <el-table-column label="买入金额（万元）" min-width="140">
+            <template #default="{ row }">
+              <!-- 导出模式：显示纯文本 -->
+              <span v-if="isExportMode">{{ row.purchase_amount.toFixed(2) }}</span>
+              <!-- 交互模式：显示输入框 -->
+              <el-input-number
+                v-else
+                v-model="row.purchase_amount"
+                :min="0"
+                :precision="2"
+                size="small"
+                style="width: 100%"
+                @change="calculateFee(row)"
+              />
+            </template>
+          </el-table-column>
+          <el-table-column label="前端费用（万元）" min-width="130">
+            <template #default="{ row }">
+              <span>{{ row.frontend_fee.toFixed(2) }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="合计打款（万元）" min-width="130">
+            <template #default="{ row }">
+              <span>{{ row.total_payment.toFixed(2) }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="档期" min-width="140">
+            <template #default="{ row }">
+              <!-- 导出模式：显示纯文本 -->
+              <span v-if="isExportMode">{{ row.schedule_date }}</span>
+              <!-- 交互模式：显示下拉框 -->
+              <el-select
+                v-else
+                v-model="row.schedule_date"
+                size="small"
+                style="width: 100%"
+                @change="updateDatesOnScheduleChange(row)"
+              >
+                <el-option
+                  v-for="(date, index) in row.available_schedules"
+                  :key="index"
+                  :label="date"
+                  :value="date"
+                />
+              </el-select>
+            </template>
+          </el-table-column>
+          <el-table-column label="余额+操作日" min-width="130">
+            <template #default="{ row }">
+              <span>{{ row.balance_operation_date }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="最迟打款日" min-width="130">
+            <template #default="{ row }">
+              <span>{{ row.latest_payment_date }}</span>
+            </template>
+          </el-table-column>
+        </el-table>
+
+        <!-- 转账指引 -->
+        <div style="margin-top: 30px; padding: 20px; background-color: #f8f9fa; border-radius: 6px; border: 1px solid #e9ecef;">
+          <div style="font-size: 16px; font-weight: bold; color: #2c3e50; margin-bottom: 15px; border-bottom: 2px solid #409EFF; padding-bottom: 8px;">
+            转账指引
+          </div>
+          <div style="line-height: 2; color: #606266;">
+            <div style="display: flex; margin-bottom: 8px;">
+              <span style="min-width: 150px; font-weight: 500; color: #303133;">收款户名：</span>
+              <span>诺亚正行基金销售有限公司私募基金募集结算专户</span>
+            </div>
+            <div style="display: flex; margin-bottom: 8px;">
+              <span style="min-width: 150px; font-weight: 500; color: #303133;">收款账号：</span>
+              <span style="font-family: monospace; font-size: 15px; font-weight: 500;">627121167</span>
+            </div>
+            <div style="display: flex; margin-bottom: 8px;">
+              <span style="min-width: 150px; font-weight: 500; color: #303133;">开户行：</span>
+              <span>中国民生银行股份有限公司上海滨江支行</span>
+            </div>
+            <div style="display: flex; margin-bottom: 8px;">
+              <span style="min-width: 150px; font-weight: 500; color: #303133;">大额支付联行号：</span>
+              <span style="font-family: monospace; font-size: 15px; font-weight: 500;">305290002375</span>
+            </div>
+            <div style="display: flex;">
+              <span style="min-width: 150px; font-weight: 500; color: #303133;">转账可备注：</span>
+              <span style="color: #409EFF;">缴付投资款</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <template #footer>
+        <el-button @click="orderGuideDialogVisible = false">关闭</el-button>
+        <el-button type="primary" @click="exportOrderGuide">导出指引</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 批量设置费用方案选择对话框 -->
+    <el-dialog
+      v-model="batchFeeDialogVisible"
+      title="选择费用方案"
+      width="600px"
+    >
+      <div style="margin-bottom: 20px">
+        <strong>为选中的 {{ selectedRules.length }} 个产品设置默认费用</strong>
+      </div>
+
+      <el-radio-group v-model="selectedFeeTemplate" style="width: 100%">
+        <div style="margin-bottom: 20px; padding: 15px; border: 1px solid #dcdfe6; border-radius: 4px; cursor: pointer"
+             :style="{ backgroundColor: selectedFeeTemplate === 'template1' ? '#f0f9ff' : 'white', borderColor: selectedFeeTemplate === 'template1' ? '#409EFF' : '#dcdfe6' }"
+             @click="selectedFeeTemplate = 'template1'">
+          <el-radio value="template1" style="margin-bottom: 10px">
+            <strong>方案一（标准费率）</strong>
+          </el-radio>
+          <div style="margin-left: 24px; color: #606266">
+            <div>· 100万 ≤ 认申购金额 &lt; 1000万：费率 <strong style="color: #409EFF">0.5%</strong></div>
+            <div>· 认申购金额 ≥ 1000万：费率 <strong style="color: #67c23a">0%</strong></div>
+          </div>
+        </div>
+
+        <div style="padding: 15px; border: 1px solid #dcdfe6; border-radius: 4px; cursor: pointer"
+             :style="{ backgroundColor: selectedFeeTemplate === 'template2' ? '#f0f9ff' : 'white', borderColor: selectedFeeTemplate === 'template2' ? '#409EFF' : '#dcdfe6' }"
+             @click="selectedFeeTemplate = 'template2'">
+          <el-radio value="template2" style="margin-bottom: 10px">
+            <strong>方案二（高费率）</strong>
+          </el-radio>
+          <div style="margin-left: 24px; color: #606266">
+            <div>· 100万 ≤ 认申购金额 &lt; 1000万：费率 <strong style="color: #e6a23c">1%</strong></div>
+            <div>· 认申购金额 ≥ 1000万：费率 <strong style="color: #67c23a">0%</strong></div>
+          </div>
+        </div>
+      </el-radio-group>
+
+      <div v-if="selectedRules.filter(r => r.fee_structure).length > 0"
+           style="margin-top: 15px; padding: 10px; background-color: #fff3e0; border-radius: 4px; color: #e6a23c">
+        <strong>⚠️ 注意：</strong>其中 {{ selectedRules.filter(r => r.fee_structure).length }} 个产品已有费用设置，将被覆盖！
+      </div>
+
+      <template #footer>
+        <el-button @click="batchFeeDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="confirmBatchSetFee">确定设置</el-button>
+      </template>
+    </el-dialog>
+
     <!-- 申购日历 -->
     <el-card v-if="calendarData" class="calendar-card">
       <template #header>
@@ -406,6 +694,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import axios from 'axios'
+import html2canvas from 'html2canvas'
 
 const API_BASE = import.meta.env.PROD ? '' : 'http://localhost:8000'
 
@@ -436,13 +725,32 @@ const calculatedDates = ref(null)
 const selectedMonth = ref(null)
 const calendarData = ref(null)
 const inputMode = ref('search')
+const feeDialogVisible = ref(false)
+const feeStructureForm = ref({
+  fund_code: '',
+  fund_name: '',
+  fee_tiers: [],
+  subscription_rule: '',
+  redemption_rule: '',
+  lock_period: ''
+})
+
+const orderGuideDialogVisible = ref(false)
+const orderGuideTitle = ref('')
+const orderGuideItems = ref([])
+const orderGuideExportRef = ref(null)  // 用于导出的容器引用
+const isExportMode = ref(false)  // 标记是否处于导出模式
+
+const batchFeeDialogVisible = ref(false)
+const selectedFeeTemplate = ref('template1')
 
 const ruleForm = ref({
   fund_code: '',
   fund_name: '',
   subscription_rule: '',
   redemption_rule: '',
-  lock_period: ''
+  lock_period: '',
+  fee_structure: ''
 })
 
 // 初始化当前月份
@@ -554,7 +862,8 @@ function resetForm() {
     fund_name: '',
     subscription_rule: '',
     redemption_rule: '',
-    lock_period: ''
+    lock_period: '',
+    fee_structure: ''
   }
 }
 
@@ -906,6 +1215,556 @@ function adjustColorBrightness(hex, percent) {
   // 转换回十六进制
   return '#' + ((r << 16) | (g << 8) | b).toString(16).padStart(6, '0')
 }
+
+// 获取费用结构摘要
+function getFeeStructureSummary(feeStructureJson) {
+  if (!feeStructureJson) {
+    return '设置费用'
+  }
+
+  try {
+    const feeStructure = JSON.parse(feeStructureJson)
+    if (!feeStructure || feeStructure.length === 0) {
+      return '设置费用'
+    }
+
+    // 提取第一个档位的费率（通常是主要费率）
+    const firstTier = feeStructure[0]
+    if (firstTier && firstTier.rate !== undefined) {
+      return `${firstTier.rate}%`
+    }
+
+    return '设置费用'
+  } catch (e) {
+    return '设置费用'
+  }
+}
+
+// 编辑费用结构
+function editFeeStructure(row) {
+  feeStructureForm.value.fund_code = row.fund_code
+  feeStructureForm.value.fund_name = row.fund_name || row.fund_code
+
+  // 保存原有的规则数据，避免覆盖
+  feeStructureForm.value.subscription_rule = row.subscription_rule || ''
+  feeStructureForm.value.redemption_rule = row.redemption_rule || ''
+  feeStructureForm.value.lock_period = row.lock_period || ''
+
+  // 解析现有的费用结构
+  if (row.fee_structure) {
+    try {
+      feeStructureForm.value.fee_tiers = JSON.parse(row.fee_structure)
+    } catch (e) {
+      feeStructureForm.value.fee_tiers = []
+    }
+  } else {
+    feeStructureForm.value.fee_tiers = []
+  }
+
+  // 如果没有档位，添加默认档位：100万<1000万 0.5%，≥1000万 0%
+  if (feeStructureForm.value.fee_tiers.length === 0) {
+    feeStructureForm.value.fee_tiers = [
+      {
+        amount_min: 100,
+        amount_max: 1000,
+        rate: 0.5,
+        fee_type: '申购费'
+      },
+      {
+        amount_min: 1000,
+        amount_max: null,
+        rate: 0,
+        fee_type: '申购费'
+      }
+    ]
+  }
+
+  feeDialogVisible.value = true
+}
+
+// 添加费用档位
+function addFeeTier() {
+  feeStructureForm.value.fee_tiers.push({
+    amount_min: 0,
+    amount_max: null,
+    rate: 0,
+    fee_type: '申购费'
+  })
+}
+
+// 删除费用档位
+function removeFeeTier(index) {
+  feeStructureForm.value.fee_tiers.splice(index, 1)
+}
+
+// 保存费用结构
+async function saveFeeStructure() {
+  try {
+    // 验证数据
+    for (let i = 0; i < feeStructureForm.value.fee_tiers.length; i++) {
+      const tier = feeStructureForm.value.fee_tiers[i]
+      if (tier.amount_min === null || tier.amount_min === '') {
+        ElMessage.warning(`请填写第${i + 1}个档位的最小金额`)
+        return
+      }
+      if (tier.rate === null || tier.rate === '') {
+        ElMessage.warning(`请填写第${i + 1}个档位的费率`)
+        return
+      }
+    }
+
+    // 将费用结构转换为JSON字符串
+    const feeStructureJson = JSON.stringify(feeStructureForm.value.fee_tiers)
+
+    // 调用后端API保存，同时发送所有字段以避免覆盖
+    const response = await axios.post(`${API_BASE}/api/fund-schedules/rules`, {
+      fund_code: feeStructureForm.value.fund_code,
+      fee_structure: feeStructureJson,
+      subscription_rule: feeStructureForm.value.subscription_rule,
+      redemption_rule: feeStructureForm.value.redemption_rule,
+      lock_period: feeStructureForm.value.lock_period
+    })
+
+    if (response.data.success) {
+      ElMessage.success('费用结构保存成功')
+      feeDialogVisible.value = false
+      loadScheduleRules()
+    }
+  } catch (error) {
+    ElMessage.error(error.response?.data?.detail || '保存失败')
+  }
+}
+
+// 格式化金额显示
+function formatAmount(amount) {
+  if (amount === null || amount === undefined) {
+    return '无上限'
+  }
+  return `${amount}万`
+}
+
+// 显示订单指引对话框
+async function showOrderGuide() {
+  if (selectedRules.value.length === 0) {
+    ElMessage.warning('请先选择产品')
+    return
+  }
+
+  orderGuideTitle.value = 'XX总的订单指引'
+  orderGuideItems.value = []
+
+  // 为每个选中的产品创建订单指引项
+  for (const rule of selectedRules.value) {
+    // 获取可用的档期日期列表（未来3个月）
+    const availableSchedules = await getAvailableScheduleDates(rule)
+
+    // 默认选择最近的档期
+    const defaultSchedule = availableSchedules.length > 0 ? availableSchedules[0] : null
+
+    // 计算余额+操作日和最迟打款日
+    let balanceOperationDate = ''
+    let latestPaymentDate = ''
+
+    if (defaultSchedule) {
+      balanceOperationDate = await calculateTradingDate(defaultSchedule, -2)
+      latestPaymentDate = await calculateTradingDate(defaultSchedule, -1)
+    }
+
+    orderGuideItems.value.push({
+      fund_code: rule.fund_code,
+      fund_short_name: getFundShortName(rule.fund_name),
+      fund_name: rule.fund_name,
+      purchase_amount: 100, // 默认100万
+      frontend_fee: 0,
+      total_payment: 100,
+      schedule_date: defaultSchedule,
+      available_schedules: availableSchedules,
+      balance_operation_date: balanceOperationDate,
+      latest_payment_date: latestPaymentDate,
+      fee_structure: rule.fee_structure
+    })
+
+    // 计算默认费用
+    const lastItem = orderGuideItems.value[orderGuideItems.value.length - 1]
+    calculateFee(lastItem)
+  }
+
+  orderGuideDialogVisible.value = true
+}
+
+// 获取下一个档期日期
+async function getNextScheduleDate(rule) {
+  try {
+    // 获取当前月份和下个月
+    const now = new Date()
+    const currentYear = now.getFullYear()
+    const currentMonth = now.getMonth() + 1
+
+    // 计算未来2个月的档期日期
+    const months = [
+      { year: currentYear, month: currentMonth },
+      { year: currentMonth === 12 ? currentYear + 1 : currentYear, month: currentMonth === 12 ? 1 : currentMonth + 1 }
+    ]
+
+    let nearestDate = null
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+
+    for (const { year, month } of months) {
+      const response = await axios.post(`${API_BASE}/api/fund-schedules/calculate`, {
+        fund_code: rule.fund_code,
+        year: year,
+        month: month
+      })
+
+      if (response.data.success) {
+        const dates = response.data.data.subscription_dates || []
+
+        for (const dateObj of dates) {
+          const scheduleDate = new Date(dateObj.date)
+          scheduleDate.setHours(0, 0, 0, 0)
+
+          // 找到第一个大于今天的日期
+          if (scheduleDate > today) {
+            if (!nearestDate || scheduleDate < nearestDate) {
+              nearestDate = scheduleDate
+            }
+          }
+        }
+      }
+    }
+
+    if (nearestDate) {
+      // 最迟打款日 = 档期日 - 1天
+      const paymentDate = new Date(nearestDate)
+      paymentDate.setDate(paymentDate.getDate() - 1)
+      return paymentDate.toISOString().split('T')[0]
+    } else {
+      // 如果没有找到档期日，返回今天
+      return new Date().toISOString().split('T')[0]
+    }
+  } catch (error) {
+    console.error('获取档期日期失败:', error)
+    return new Date().toISOString().split('T')[0]
+  }
+}
+
+// 计算费用
+function calculateFee(item) {
+  if (!item.purchase_amount || item.purchase_amount <= 0) {
+    item.frontend_fee = 0
+    item.total_payment = 0
+    return
+  }
+
+  // 解析费用结构
+  let feeRate = 0
+
+  if (item.fee_structure) {
+    try {
+      const feeStructure = JSON.parse(item.fee_structure)
+
+      // 根据买入金额找到对应的费率档位
+      for (const tier of feeStructure) {
+        const amountMin = tier.amount_min || 0
+        const amountMax = tier.amount_max
+
+        // 检查金额是否在此档位范围内
+        if (item.purchase_amount >= amountMin) {
+          if (amountMax === null || amountMax === undefined || item.purchase_amount < amountMax) {
+            feeRate = tier.rate || 0
+            break
+          }
+        }
+      }
+    } catch (e) {
+      console.error('解析费用结构失败:', e)
+      feeRate = 0
+    }
+  }
+
+  // 计算费用和合计
+  item.frontend_fee = (item.purchase_amount * feeRate) / 100
+  item.total_payment = item.purchase_amount + item.frontend_fee
+}
+
+// 获取可用的档期日期列表（未来3个月）
+async function getAvailableScheduleDates(rule) {
+  try {
+    const now = new Date()
+    const currentYear = now.getFullYear()
+    const currentMonth = now.getMonth() + 1
+
+    const allDates = []
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+
+    // 计算未来3个月的档期日期
+    for (let i = 0; i < 3; i++) {
+      let month = currentMonth + i
+      let year = currentYear
+
+      while (month > 12) {
+        month -= 12
+        year += 1
+      }
+
+      const response = await axios.post(`${API_BASE}/api/fund-schedules/calculate`, {
+        fund_code: rule.fund_code,
+        year: year,
+        month: month
+      })
+
+      if (response.data.success) {
+        const dates = response.data.data.subscription_dates || []
+
+        for (const dateObj of dates) {
+          const scheduleDate = new Date(dateObj.date)
+          scheduleDate.setHours(0, 0, 0, 0)
+
+          // 只保留未来的日期
+          if (scheduleDate > today) {
+            allDates.push(dateObj.date)
+          }
+        }
+      }
+    }
+
+    // 按日期排序
+    allDates.sort()
+
+    return allDates
+  } catch (error) {
+    console.error('获取可用档期失败:', error)
+    return []
+  }
+}
+
+// 计算交易日（offset为偏移天数，-1表示T-1，-2表示T-2）
+// 会自动排除周末
+async function calculateTradingDate(scheduleDate, offset) {
+  if (!scheduleDate) return ''
+
+  const date = new Date(scheduleDate)
+  let daysToSubtract = Math.abs(offset)
+  let tradingDaysCount = 0
+
+  // 从档期日往前推算交易日
+  while (tradingDaysCount < daysToSubtract) {
+    date.setDate(date.getDate() - 1)
+
+    // 检查是否是周末（0=周日, 6=周六）
+    const dayOfWeek = date.getDay()
+    if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+      tradingDaysCount++
+    }
+  }
+
+  return date.toISOString().split('T')[0]
+}
+
+// 当档期变化时更新余额+操作日和最迟打款日
+async function updateDatesOnScheduleChange(item) {
+  if (item.schedule_date) {
+    item.balance_operation_date = await calculateTradingDate(item.schedule_date, -2)
+    item.latest_payment_date = await calculateTradingDate(item.schedule_date, -1)
+  }
+}
+
+// 计算订单指引合计行
+function getOrderGuideSummary(param) {
+  const { columns, data } = param
+  const sums = []
+
+  columns.forEach((column, index) => {
+    if (index === 0) {
+      sums[index] = '合计'
+      return
+    }
+
+    // 买入金额列
+    if (index === 1) {
+      const total = data.reduce((sum, row) => sum + (row.purchase_amount || 0), 0)
+      sums[index] = total.toFixed(2)
+      return
+    }
+
+    // 前端费用列
+    if (index === 2) {
+      const total = data.reduce((sum, row) => sum + (row.frontend_fee || 0), 0)
+      sums[index] = total.toFixed(2)
+      return
+    }
+
+    // 合计打款列
+    if (index === 3) {
+      const total = data.reduce((sum, row) => sum + (row.total_payment || 0), 0)
+      sums[index] = total.toFixed(2)
+      return
+    }
+
+    // 其他列显示空
+    sums[index] = ''
+  })
+
+  return sums
+}
+
+// 重置订单指引
+function resetOrderGuide() {
+  orderGuideTitle.value = ''
+  orderGuideItems.value = []
+}
+
+// 导出订单指引
+async function exportOrderGuide() {
+  if (!orderGuideExportRef.value) {
+    ElMessage.error('导出失败：未找到导出内容')
+    return
+  }
+
+  try {
+    // 显示加载提示
+    const loadingMessage = ElMessage.info({
+      message: '正在生成图片，请稍候...',
+      duration: 0
+    })
+
+    // 切换到导出模式（显示纯文本，隐藏输入框和下拉框）
+    isExportMode.value = true
+
+    // 等待DOM渲染完成
+    await new Promise(resolve => setTimeout(resolve, 200))
+
+    // 使用html2canvas捕获内容
+    const canvas = await html2canvas(orderGuideExportRef.value, {
+      backgroundColor: '#ffffff',
+      scale: 2,  // 提高清晰度
+      logging: false,
+      useCORS: true,
+      allowTaint: true
+    })
+
+    // 恢复交互模式
+    isExportMode.value = false
+
+    // 将canvas转换为blob
+    canvas.toBlob((blob) => {
+      // 创建下载链接
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      const fileName = `${orderGuideTitle.value || '订单指引'}.png`
+      link.href = url
+      link.download = fileName
+      link.click()
+
+      // 清理
+      URL.revokeObjectURL(url)
+
+      // 关闭加载提示
+      loadingMessage.close()
+      ElMessage.success('导出成功')
+    }, 'image/png')
+  } catch (error) {
+    console.error('导出失败:', error)
+    // 确保恢复交互模式
+    isExportMode.value = false
+    ElMessage.error('导出失败，请重试')
+  }
+}
+
+// 批量设置默认费用（打开选择对话框）
+async function batchSetDefaultFee() {
+  if (selectedRules.value.length === 0) {
+    ElMessage.warning('请先选择产品')
+    return
+  }
+
+  // 重置为方案一
+  selectedFeeTemplate.value = 'template1'
+  // 打开选择对话框
+  batchFeeDialogVisible.value = true
+}
+
+// 确认批量设置费用
+async function confirmBatchSetFee() {
+  try {
+    // 根据选择的方案确定费用结构
+    let defaultFeeStructure
+    if (selectedFeeTemplate.value === 'template1') {
+      // 方案一：0.5% / 0%
+      defaultFeeStructure = [
+        {
+          amount_min: 100,
+          amount_max: 1000,
+          rate: 0.5,
+          fee_type: '申购费'
+        },
+        {
+          amount_min: 1000,
+          amount_max: null,
+          rate: 0,
+          fee_type: '申购费'
+        }
+      ]
+    } else {
+      // 方案二：1% / 0%
+      defaultFeeStructure = [
+        {
+          amount_min: 100,
+          amount_max: 1000,
+          rate: 1,
+          fee_type: '申购费'
+        },
+        {
+          amount_min: 1000,
+          amount_max: null,
+          rate: 0,
+          fee_type: '申购费'
+        }
+      ]
+    }
+
+    const feeStructureJson = JSON.stringify(defaultFeeStructure)
+
+    let updatedCount = 0
+    let errorCount = 0
+
+    // 遍历选中的档期规则
+    for (const rule of selectedRules.value) {
+      try {
+        await axios.post(`${API_BASE}/api/fund-schedules/rules`, {
+          fund_code: rule.fund_code,
+          fee_structure: feeStructureJson,
+          subscription_rule: rule.subscription_rule,
+          redemption_rule: rule.redemption_rule,
+          lock_period: rule.lock_period
+        })
+        updatedCount++
+      } catch (error) {
+        console.error(`设置 ${rule.fund_code} 默认费用失败:`, error)
+        errorCount++
+      }
+    }
+
+    // 关闭对话框
+    batchFeeDialogVisible.value = false
+
+    if (updatedCount > 0) {
+      const templateName = selectedFeeTemplate.value === 'template1' ? '方案一' : '方案二'
+      ElMessage.success(`成功为 ${updatedCount} 个产品设置默认费用（${templateName}）`)
+      loadScheduleRules()
+    }
+
+    if (errorCount > 0) {
+      ElMessage.warning(`${errorCount} 个产品设置失败`)
+    }
+  } catch (error) {
+    ElMessage.error('批量设置失败')
+  }
+}
+
+
 
 </script>
 

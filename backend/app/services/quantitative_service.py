@@ -612,7 +612,10 @@ class QuantitativeService:
         prev_nav = start_data['nav']
         prev_index = start_data['index']
 
-        for current_date in period_nav_dates:
+        # 记录起始日期，用于判断是否跳过起始日的分红调整
+        start_date_ts = start_data['date']
+
+        for i, current_date in enumerate(period_nav_dates):
             # 获取当前日期的数据
             current_data = self._align_data_by_date(nav_df, index_df, current_date, 'backward')
 
@@ -620,12 +623,18 @@ class QuantitativeService:
                 continue
 
             # 分红调整：如果current_date是除息日，使用除权前净值
-            adjusted_nav = self._adjust_nav_for_dividend(
-                current_data['nav'],
-                current_date,
-                fund_code,
-                dividends
-            )
+            # 但跳过起始日（第一个净值日）的分红调整，避免在同一天进出导致虚假收益
+            if i == 0:
+                # 起始日不进行分红调整，使用除权后的净值
+                adjusted_nav = current_data['nav']
+            else:
+                # 期间内的其他日期进行分红调整
+                adjusted_nav = self._adjust_nav_for_dividend(
+                    current_data['nav'],
+                    current_date,
+                    fund_code,
+                    dividends
+                )
 
             # 计算当期收益率（使用调整后的净值）
             nav_return = (adjusted_nav / prev_nav - 1)
@@ -655,15 +664,18 @@ class QuantitativeService:
             max_drawdown = 0
         else:
             # 计算考虑分红调整的累计收益曲线
-            merged['nav_adjusted'] = merged.apply(
-                lambda row: self._adjust_nav_for_dividend(
-                    row['nav'],
-                    row['date'],
+            # 起始日（第一行）不进行分红调整，避免虚假收益
+            merged['nav_adjusted'] = merged['nav']  # 默认使用原始净值
+
+            # 只对第二行及之后的数据进行分红调整
+            for idx in range(1, len(merged)):
+                adjusted_nav = self._adjust_nav_for_dividend(
+                    merged.iloc[idx]['nav'],
+                    merged.iloc[idx]['date'],
                     fund_code,
                     dividends
-                ),
-                axis=1
-            )
+                )
+                merged.iloc[idx, merged.columns.get_loc('nav_adjusted')] = adjusted_nav
 
             # 计算累计收益（使用调整后的净值，但复利时使用除权后净值）
             merged['nav_cum_return'] = 1.0

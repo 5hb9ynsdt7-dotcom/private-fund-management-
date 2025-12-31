@@ -258,6 +258,7 @@ class FundScheduleRule(Base):
     subscription_rule = Column(Text, comment='申购规则描述，如：每月15日和每月最后一个交易日')
     redemption_rule = Column(Text, comment='赎回规则描述，如：每月最后一个交易日')
     lock_period = Column(String(100), comment='锁定期描述，如：3个月、6个月、1年')
+    fee_structure = Column(Text, comment='费用结构，JSON格式存储分档费率信息')
     created_at = Column(DateTime, default=datetime.now, comment='创建时间')
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, comment='更新时间')
 

@@ -179,6 +179,28 @@ def create_weekly_excess_cache_table(engine):
         raise
 
 
+def add_fund_schedule_fee_structure(engine):
+    """为FundScheduleRule表添加fee_structure字段"""
+    logger.info("检查 fund_schedule_rule.fee_structure 字段...")
+
+    try:
+        with engine.connect() as conn:
+            if check_column_exists(engine, 'fund_schedule_rule', 'fee_structure'):
+                logger.info("✓ fund_schedule_rule.fee_structure 字段已存在")
+                return
+
+            logger.info("添加 fund_schedule_rule.fee_structure 字段...")
+            conn.execute(text("""
+                ALTER TABLE fund_schedule_rule
+                ADD COLUMN fee_structure TEXT
+            """))
+            conn.commit()
+            logger.info("✓ fund_schedule_rule.fee_structure 字段添加成功")
+    except Exception as e:
+        logger.error(f"添加 fund_schedule_rule.fee_structure 字段失败: {e}")
+        raise
+
+
 def run_migrations():
     """
     执行所有数据库迁移
@@ -198,6 +220,7 @@ def run_migrations():
         add_dividend_pre_nav(engine)
         add_fund_timestamps(engine)  # 新增：添加时间戳字段
         create_weekly_excess_cache_table(engine)  # 新增：创建周度超额缓存表
+        add_fund_schedule_fee_structure(engine)  # 新增：添加费用结构字段
 
         logger.info("=" * 60)
         logger.info("✓ 所有数据库迁移完成")
