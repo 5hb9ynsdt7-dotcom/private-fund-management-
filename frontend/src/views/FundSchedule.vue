@@ -449,17 +449,26 @@
               </el-select>
             </template>
           </el-table-column>
-          <el-table-column label="余额+操作日" min-width="130">
+          <el-table-column label="余额+支付截止日" min-width="130">
             <template #default="{ row }">
               <span>{{ row.balance_operation_date }}</span>
             </template>
           </el-table-column>
-          <el-table-column label="最迟打款日" min-width="130">
+          <el-table-column label="转账支付截止日" min-width="130">
             <template #default="{ row }">
               <span>{{ row.latest_payment_date }}</span>
             </template>
           </el-table-column>
         </el-table>
+
+        <!-- 余额+支付提醒 -->
+        <div style="margin-top: 30px; padding: 15px 20px; background-color: #fff3e0; border-radius: 6px; border: 2px solid #ff9800; border-left: 6px solid #ff9800;">
+          <div style="display: flex; align-items: center; color: #e65100;">
+            <span style="font-size: 18px; margin-right: 8px;">⚠️</span>
+            <span style="font-weight: bold; font-size: 15px;">余额+支付提醒：</span>
+            <span style="margin-left: 8px; font-size: 14px;">需要于余额+打款截止日当天的14:55前完成操作</span>
+          </div>
+        </div>
 
         <!-- 转账指引 -->
         <div style="margin-top: 30px; padding: 20px; background-color: #f8f9fa; border-radius: 6px; border: 1px solid #e9ecef;">
@@ -795,7 +804,30 @@ async function loadScheduleRules() {
   try {
     const response = await axios.get(`${API_BASE}/api/fund-schedules/rules`)
     if (response.data.success) {
-      scheduleRules.value = response.data.data
+      // 获取数据后进行排序
+      const rules = response.data.data
+
+      // 按照：大类策略 -> 细分策略 -> 基金简称 进行排序
+      rules.sort((a, b) => {
+        // 1. 首先按大类策略排序
+        const mainStrategyA = a.main_strategy || ''
+        const mainStrategyB = b.main_strategy || ''
+        const mainStrategyCompare = mainStrategyA.localeCompare(mainStrategyB, 'zh-CN')
+        if (mainStrategyCompare !== 0) return mainStrategyCompare
+
+        // 2. 大类策略相同时，按细分策略排序
+        const subStrategyA = a.sub_strategy || ''
+        const subStrategyB = b.sub_strategy || ''
+        const subStrategyCompare = subStrategyA.localeCompare(subStrategyB, 'zh-CN')
+        if (subStrategyCompare !== 0) return subStrategyCompare
+
+        // 3. 细分策略相同时，按基金简称排序
+        const fundNameA = getFundShortName(a.fund_name || '')
+        const fundNameB = getFundShortName(b.fund_name || '')
+        return fundNameA.localeCompare(fundNameB, 'zh-CN')
+      })
+
+      scheduleRules.value = rules
     }
   } catch (error) {
     ElMessage.error('加载档期规则失败')

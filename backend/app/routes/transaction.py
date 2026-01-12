@@ -548,23 +548,68 @@ async def delete_client_transactions(
     """
     try:
         deleted_count = db.query(Transaction).filter(Transaction.group_id == group_id).count()
-        
+
         if deleted_count == 0:
             raise HTTPException(status_code=404, detail="未找到该客户的交易记录")
-        
+
         db.query(Transaction).filter(Transaction.group_id == group_id).delete()
         db.commit()
-        
+
         return {
             "success": True,
             "message": f"成功删除客户 {group_id} 的 {deleted_count} 条交易记录"
         }
-        
+
     except HTTPException:
         raise
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"删除交易记录失败: {str(e)}")
+
+
+@router.post("/clients/batch-delete")
+async def batch_delete_client_transactions(
+    group_ids: List[str],
+    db: Session = Depends(get_db)
+):
+    """
+    批量删除多个客户的所有交易记录
+    """
+    try:
+        if not group_ids:
+            raise HTTPException(status_code=400, detail="请提供要删除的客户集团号列表")
+
+        total_deleted = 0
+        deleted_clients = []
+        failed_clients = []
+
+        for group_id in group_ids:
+            try:
+                count = db.query(Transaction).filter(Transaction.group_id == group_id).count()
+                if count > 0:
+                    db.query(Transaction).filter(Transaction.group_id == group_id).delete()
+                    total_deleted += count
+                    deleted_clients.append(group_id)
+                else:
+                    failed_clients.append({"group_id": group_id, "reason": "未找到交易记录"})
+            except Exception as e:
+                failed_clients.append({"group_id": group_id, "reason": str(e)})
+
+        db.commit()
+
+        return {
+            "success": True,
+            "message": f"成功删除 {len(deleted_clients)} 个客户的 {total_deleted} 条交易记录",
+            "deleted_count": total_deleted,
+            "deleted_clients": deleted_clients,
+            "failed_clients": failed_clients
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"批量删除交易记录失败: {str(e)}")
 
 
 @router.get("/stats")
@@ -928,6 +973,32 @@ class PeriodAnalysisSummary(BaseModel):
     total_return: float = 0
     total_return_rate: float = 0
     product_count: int = 0
+
+
+class QuarterlyPerformance(BaseModel):
+    """季度业绩数据"""
+    quarter: str  # Q1, Q2, Q3, Q4
+    quarter_label: str  # 例如："Q1 (01-01 ~ 03-31)"
+    start_date: date
+    end_date: date
+    # 产品层面数据
+    products: List[Dict[str, Any]] = []  # 每个产品在该季度的收益
+    # 汇总数据
+    total_return: float = 0  # 季度总收益
+    total_return_rate: float = 0  # 季度收益率
+    cumulative_return: float = 0  # 累计收益（从年初到该季度末）
+
+
+class AnnualReviewResponse(BaseModel):
+    """年度收益复盘响应"""
+    review_year: int  # 复盘年份
+    client_info: dict
+    # 季度数据
+    quarterly_performance: List[QuarterlyPerformance] = []
+    # 年度汇总
+    annual_summary: dict = {}
+    # 阶段性分析
+    stage_analysis: dict = {}
 
 
 class StageAnalysisResponse(BaseModel):
@@ -1310,8 +1381,724 @@ async def get_client_period_profit_analysis(
             period_analysis=period_analysis,
             product_details=product_details
         )
-        
+
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"获取时间段收益分析失败: {str(e)}")
+
+
+@router.get("/clients/{group_id}/annual-review", response_model=AnnualReviewResponse)
+async def get_client_annual_review(
+    group_id: str,
+    year: int = Query(..., description="复盘年份"),
+    db: Session = Depends(get_db)
+):
+    """
+    获取客户的年度收益复盘数据
+    按季度拆分，展示季度收益和累计收益
+    """
+    try:
+        # 验证年份
+        current_year = datetime.now().year
+        if year < 2020 or year > current_year + 1:
+            raise HTTPException(status_code=400, detail=f"年份必须在2020到{current_year + 1}之间")
+
+        # 定义季度
+        quarters = [
+            {
+                "quarter": "Q1",
+                "quarter_label": "Q1 (01-01 ~ 03-31)",
+                "start_date": date(year, 1, 1),
+                "end_date": date(year, 3, 31)
+            },
+            {
+                "quarter": "Q2",
+                "quarter_label": "Q2 (04-01 ~ 06-30)",
+                "start_date": date(year, 4, 1),
+                "end_date": date(year, 6, 30)
+            },
+            {
+                "quarter": "Q3",
+                "quarter_label": "Q3 (07-01 ~ 09-30)",
+                "start_date": date(year, 7, 1),
+                "end_date": date(year, 9, 30)
+            },
+            {
+                "quarter": "Q4",
+                "quarter_label": "Q4 (10-01 ~ 12-31)",
+                "start_date": date(year, 10, 1),
+                "end_date": date(year, 12, 31)
+            }
+        ]
+
+        # 获取客户的所有交易记录
+        transactions = db.query(Transaction).filter(
+            Transaction.group_id == group_id
+        ).order_by(Transaction.confirmed_date.asc()).all()
+
+        if not transactions:
+            raise HTTPException(status_code=404, detail="未找到该客户的交易记录")
+
+        # 获取客户基本信息
+        client_info = {
+            "group_id": group_id,
+            "client_name": transactions[0].client_name,
+            "review_year": year
+        }
+
+        # 按产品分组交易记录
+        product_transactions = {}
+        for t in transactions:
+            key = t.product_code or t.fund_name or "未知产品"
+            if key not in product_transactions:
+                product_transactions[key] = []
+            product_transactions[key].append(t)
+
+        # 计算每个季度的收益
+        quarterly_performance = []
+        cumulative_return = 0  # 累计收益（从年初到当前季度）
+
+        for quarter_info in quarters:
+            quarter = quarter_info["quarter"]
+            start_date = quarter_info["start_date"]
+            end_date = quarter_info["end_date"]
+
+            # 存储各产品在该季度的收益
+            product_returns = []
+            quarter_total_return = 0
+            quarter_start_value = 0
+            quarter_end_value = 0
+
+            for product_code, product_trans in product_transactions.items():
+                # 获取产品名称和策略信息
+                product_name = product_trans[0].product_name
+                fund_name = product_trans[0].fund_name
+                main_strategy = None
+                sub_strategy = None
+
+                if product_code != "未知产品":
+                    fund = db.query(Fund).filter(Fund.fund_code == product_code).first()
+                    if fund and fund.strategy:
+                        main_strategy = fund.strategy.main_strategy
+                        sub_strategy = fund.strategy.sub_strategy
+
+                # 计算期初持有份额（季度开始前的交易）
+                start_shares = 0
+                for t in product_trans:
+                    if t.confirmed_date < start_date and t.confirmed_shares:
+                        shares = float(t.confirmed_shares)
+                        transaction_type = t.transaction_type.lower()
+
+                        if any(keyword in transaction_type for keyword in ['申购', '买入', '认购', '认购结果', '增持', '强制调增', '强行调增']):
+                            start_shares += shares
+                        elif any(keyword in transaction_type for keyword in ['赎回', '卖出', '减持', '强制调减', '强行调减', '强制赎回']):
+                            start_shares -= shares
+                        elif '分红' in transaction_type:
+                            # 红利再投：份额增加，金额为0
+                            if shares > 0 and (not t.confirmed_amount or t.confirmed_amount == 0):
+                                start_shares += shares
+
+                # 计算期末持有份额（季度结束前的所有交易）
+                end_shares = 0
+                period_cashflow = 0
+                period_dividend = 0  # 季度内的分红金额
+
+                for t in product_trans:
+                    if t.confirmed_date <= end_date and t.confirmed_shares:
+                        shares = float(t.confirmed_shares)
+                        transaction_type = t.transaction_type.lower()
+
+                        if any(keyword in transaction_type for keyword in ['申购', '买入', '认购', '认购结果', '增持', '强制调增', '强行调增']):
+                            end_shares += shares
+                            # 季度内的申购记为现金流出
+                            if start_date <= t.confirmed_date <= end_date and t.confirmed_amount:
+                                period_cashflow += float(t.confirmed_amount)
+                        elif any(keyword in transaction_type for keyword in ['赎回', '卖出', '减持', '强制调减', '强行调减', '强制赎回']):
+                            end_shares -= shares
+                            # 季度内的赎回记为现金流入
+                            if start_date <= t.confirmed_date <= end_date and t.confirmed_amount:
+                                period_cashflow -= float(t.confirmed_amount)
+                        elif '分红' in transaction_type:
+                            # 处理分红
+                            if start_date <= t.confirmed_date <= end_date:
+                                # 红利再投：份额增加，金额为0
+                                if shares > 0 and (not t.confirmed_amount or t.confirmed_amount == 0):
+                                    end_shares += shares
+                                    # 红利再投不影响现金流，但需要记录分红收益
+                                    # 分红收益 = 分红份额 * 当时净值（近似）
+                                    # 这里暂不计入period_dividend，因为已体现在份额增加中
+                                # 现金分红：金额大于0，份额不变或减少
+                                elif t.confirmed_amount and t.confirmed_amount > 0:
+                                    period_dividend += float(t.confirmed_amount)
+                                    # 现金分红是收益，不影响现金流（因为是收入）
+
+                # 获取期初和期末净值
+                start_nav = None
+                end_nav = None
+
+                if product_code != "未知产品":
+                    # 优先使用产品代码查询净值
+                    nav_fund_code = product_code
+
+                    # 如果通过产品代码找不到基金，尝试通过产品名称模糊匹配
+                    fund = db.query(Fund).filter(Fund.fund_code == product_code).first()
+                    if not fund and fund_name:
+                        # 尝试通过基金名称模糊匹配
+                        search_name = fund_name.replace('龙舟-', '').strip()
+                        fund = db.query(Fund).filter(Fund.fund_name.contains(search_name)).first()
+                        if fund:
+                            nav_fund_code = fund.fund_code  # 使用匹配到的基金代码查找净值
+
+                    # 获取最接近季度开始日期的净值
+                    start_nav_record = db.query(Nav).filter(
+                        Nav.fund_code == nav_fund_code,
+                        Nav.nav_date <= start_date
+                    ).order_by(Nav.nav_date.desc()).first()
+
+                    if start_nav_record:
+                        start_nav = float(start_nav_record.unit_nav)
+
+                    # 获取最接近季度结束日期的净值
+                    end_nav_record = db.query(Nav).filter(
+                        Nav.fund_code == nav_fund_code,
+                        Nav.nav_date <= end_date
+                    ).order_by(Nav.nav_date.desc()).first()
+
+                    if end_nav_record:
+                        end_nav = float(end_nav_record.unit_nav)
+
+                # 计算市值
+                start_market_value = (start_shares * start_nav) if (start_nav and start_shares > 0) else 0
+                end_market_value = (end_shares * end_nav) if (end_nav and end_shares > 0) else 0
+
+                # 计算季度收益：期末市值 - 期初市值 - 期间净现金流 + 现金分红
+                # 注意：红利再投已经体现在end_shares中，不需要额外加
+                period_return = end_market_value - start_market_value - period_cashflow + period_dividend
+
+                # 只包含有持仓或有交易的产品
+                if start_market_value > 0 or end_market_value > 0 or abs(period_cashflow) > 0:
+                    product_returns.append({
+                        "product_code": product_code,
+                        "product_name": product_name,
+                        "fund_name": fund_name,
+                        "main_strategy": main_strategy,
+                        "sub_strategy": sub_strategy,
+                        "start_market_value": round(start_market_value, 2),
+                        "end_market_value": round(end_market_value, 2),
+                        "period_cashflow": round(period_cashflow, 2),
+                        "period_dividend": round(period_dividend, 2),  # 添加分红字段
+                        "period_return": round(period_return, 2)
+                    })
+
+                    quarter_total_return += period_return
+                    quarter_start_value += start_market_value
+                    quarter_end_value += end_market_value
+
+            # 计算季度收益率
+            quarter_return_rate = (quarter_total_return / quarter_start_value * 100) if quarter_start_value > 0 else 0
+
+            # 累计收益
+            cumulative_return += quarter_total_return
+
+            quarterly_performance.append(QuarterlyPerformance(
+                quarter=quarter,
+                quarter_label=quarter_info["quarter_label"],
+                start_date=start_date,
+                end_date=end_date,
+                products=product_returns,
+                total_return=round(quarter_total_return, 2),
+                total_return_rate=round(quarter_return_rate, 2),
+                cumulative_return=round(cumulative_return, 2)
+            ))
+
+        # 计算年度汇总
+        annual_total_return = sum(q.total_return for q in quarterly_performance)
+
+        # 计算年初市值（第一季度所有产品的期初市值总和）
+        year_start_value = 0
+        if quarterly_performance and quarterly_performance[0].products:
+            year_start_value = sum(p["start_market_value"] for p in quarterly_performance[0].products)
+
+        # 计算年末市值（最后一季度所有产品的期末市值总和）
+        year_end_value = 0
+        if quarterly_performance and quarterly_performance[-1].products:
+            year_end_value = sum(p["end_market_value"] for p in quarterly_performance[-1].products)
+
+        # 找出表现最好和最差的季度
+        best_quarter = max(quarterly_performance, key=lambda q: q.total_return) if quarterly_performance else None
+        worst_quarter = min(quarterly_performance, key=lambda q: q.total_return) if quarterly_performance else None
+
+        annual_summary = {
+            "total_return": round(annual_total_return, 2),
+            "year_start_value": round(year_start_value, 2),
+            "year_end_value": round(year_end_value, 2),
+            "best_quarter": best_quarter.quarter if best_quarter else None,
+            "best_quarter_return": best_quarter.total_return if best_quarter else 0,
+            "worst_quarter": worst_quarter.quarter if worst_quarter else None,
+            "worst_quarter_return": worst_quarter.total_return if worst_quarter else 0
+        }
+
+        # 阶段性分析
+        stage_analysis = {
+            "description": f"{year}年度投资复盘",
+            "insights": []
+        }
+
+        # 添加一些分析洞察
+        if best_quarter and worst_quarter:
+            if best_quarter.total_return > 0:
+                stage_analysis["insights"].append(f"{best_quarter.quarter}表现最佳，收益{best_quarter.total_return:.2f}元")
+            if worst_quarter.total_return < 0:
+                stage_analysis["insights"].append(f"{worst_quarter.quarter}表现最差，亏损{abs(worst_quarter.total_return):.2f}元")
+
+        # 分析是否存在回撤后修复的情况
+        for i in range(len(quarterly_performance) - 1):
+            if quarterly_performance[i].total_return < 0 and quarterly_performance[i + 1].total_return > 0:
+                stage_analysis["insights"].append(
+                    f"{quarterly_performance[i].quarter}回撤后，{quarterly_performance[i + 1].quarter}实现修复"
+                )
+
+        return AnnualReviewResponse(
+            review_year=year,
+            client_info=client_info,
+            quarterly_performance=quarterly_performance,
+            annual_summary=annual_summary,
+            stage_analysis=stage_analysis
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取年度收益复盘失败: {str(e)}")
+
+
+@router.get("/clients/{group_id}/holdings-change-analysis")
+async def get_holdings_change_analysis(
+    group_id: str,
+    year: int = Query(..., description="分析年份"),
+    db: Session = Depends(get_db)
+):
+    """
+    获取客户年度持仓变动分析
+    对比年初和年末的持仓情况
+    """
+    try:
+        # 定义年初和年末日期
+        year_start = date(year, 1, 1)
+        year_end = date(year, 12, 31)
+
+        # 获取客户的所有交易记录
+        transactions = db.query(Transaction).filter(
+            Transaction.group_id == group_id
+        ).order_by(Transaction.confirmed_date.asc()).all()
+
+        if not transactions:
+            raise HTTPException(status_code=404, detail="未找到该客户的交易记录")
+
+        # 获取客户基本信息
+        client_info = {
+            "group_id": group_id,
+            "client_name": transactions[0].client_name,
+            "year": year,
+            "year_start": year_start.strftime("%Y年%m月%d日"),
+            "year_end": year_end.strftime("%Y年%m月%d日")
+        }
+
+        # 按产品分组交易记录
+        product_transactions = {}
+        for t in transactions:
+            key = t.product_code or t.fund_name or "未知产品"
+            if key not in product_transactions:
+                product_transactions[key] = []
+            product_transactions[key].append(t)
+
+        # 计算年初持仓
+        year_start_holdings = []
+        # 计算年末持仓
+        year_end_holdings = []
+
+        for product_code, product_trans in product_transactions.items():
+            # 获取产品信息
+            product_name = product_trans[0].product_name
+            fund_name = product_trans[0].fund_name
+            main_strategy = None
+            sub_strategy = None
+
+            if product_code != "未知产品":
+                fund = db.query(Fund).filter(Fund.fund_code == product_code).first()
+                if fund and fund.strategy:
+                    main_strategy = fund.strategy.main_strategy
+                    sub_strategy = fund.strategy.sub_strategy
+
+            # 计算年初持仓份额和成本
+            start_shares = 0
+            start_cost = 0
+            start_dividend = 0  # 年初之前的累计现金分红
+            for t in product_trans:
+                if t.confirmed_date < year_start:
+                    transaction_type = t.transaction_type.lower()
+
+                    # 处理现金分红（份额为0或null，金额大于0）
+                    if '分红' in transaction_type and t.confirmed_amount and t.confirmed_amount > 0:
+                        shares = float(t.confirmed_shares) if t.confirmed_shares else 0
+                        # 现金分红：份额为0，金额大于0
+                        if shares == 0:
+                            start_dividend += float(t.confirmed_amount)
+                        # 红利再投：份额大于0，金额为0或很小
+                        elif shares > 0:
+                            start_shares += shares
+                    # 处理其他交易
+                    elif t.confirmed_shares:
+                        shares = float(t.confirmed_shares)
+
+                        if any(keyword in transaction_type for keyword in ['申购', '买入', '认购', '认购结果', '增持']):
+                            start_shares += shares
+                            if t.confirmed_amount:
+                                start_cost += float(t.confirmed_amount)
+                        elif any(keyword in transaction_type for keyword in ['赎回', '卖出', '减持', '强制调减', '强行调减', '强制赎回']):
+                            # 按比例减少成本
+                            if start_shares > 0 and t.confirmed_amount:
+                                cost_ratio = shares / start_shares
+                                start_cost -= start_cost * cost_ratio
+                            start_shares -= shares
+
+            # 计算年末持仓份额和成本
+            end_shares = 0
+            end_cost = 0
+            end_dividend = 0  # 年末之前的累计现金分红
+            for t in product_trans:
+                if t.confirmed_date <= year_end:
+                    transaction_type = t.transaction_type.lower()
+
+                    # 处理现金分红（份额为0或null，金额大于0）
+                    if '分红' in transaction_type and t.confirmed_amount and t.confirmed_amount > 0:
+                        shares = float(t.confirmed_shares) if t.confirmed_shares else 0
+                        # 现金分红：份额为0，金额大于0
+                        if shares == 0:
+                            end_dividend += float(t.confirmed_amount)
+                        # 红利再投：份额大于0
+                        elif shares > 0:
+                            end_shares += shares
+                    # 处理其他交易
+                    elif t.confirmed_shares:
+                        shares = float(t.confirmed_shares)
+
+                        if any(keyword in transaction_type for keyword in ['申购', '买入', '认购', '认购结果', '增持']):
+                            end_shares += shares
+                            if t.confirmed_amount:
+                                end_cost += float(t.confirmed_amount)
+                        elif any(keyword in transaction_type for keyword in ['赎回', '卖出', '减持', '强制调减', '强行调减', '强制赎回']):
+                            if end_shares > 0 and t.confirmed_amount:
+                                cost_ratio = shares / end_shares
+                                end_cost -= end_cost * cost_ratio
+                            end_shares -= shares
+
+            # 获取年初和年末净值
+            start_nav = None
+            end_nav = None
+
+            if product_code != "未知产品":
+                # 优先使用产品代码查询净值
+                nav_fund_code = product_code
+
+                # 如果通过产品代码找不到基金，尝试通过产品名称模糊匹配
+                fund = db.query(Fund).filter(Fund.fund_code == product_code).first()
+                if not fund and fund_name:
+                    # 尝试通过基金名称模糊匹配
+                    search_name = fund_name.replace('龙舟-', '').strip()
+                    fund = db.query(Fund).filter(Fund.fund_name.contains(search_name)).first()
+                    if fund:
+                        nav_fund_code = fund.fund_code  # 使用匹配到的基金代码查找净值
+
+                # 查询年初净值
+                start_nav_record = db.query(Nav).filter(
+                    Nav.fund_code == nav_fund_code,
+                    Nav.nav_date <= year_start
+                ).order_by(Nav.nav_date.desc()).first()
+
+                if start_nav_record:
+                    start_nav = float(start_nav_record.unit_nav)
+
+                # 查询年末净值
+                end_nav_record = db.query(Nav).filter(
+                    Nav.fund_code == nav_fund_code,
+                    Nav.nav_date <= year_end
+                ).order_by(Nav.nav_date.desc()).first()
+
+                if end_nav_record:
+                    end_nav = float(end_nav_record.unit_nav)
+
+            # 计算年初持仓 - 只有份额大于0才算持仓
+            if start_shares > 0:
+                start_market_value = start_shares * start_nav if start_nav else 0
+                # 盈亏 = 市值 - 成本 + 累计现金分红
+                start_pnl = start_market_value - start_cost + start_dividend
+
+                year_start_holdings.append({
+                    "product_code": product_code,
+                    "fund_name": fund_name,
+                    "product_name": product_name,
+                    "main_strategy": main_strategy,
+                    "sub_strategy": sub_strategy,
+                    "shares": start_shares,
+                    "cost": start_cost,
+                    "market_value": start_market_value,
+                    "pnl": start_pnl,
+                    "dividend": start_dividend,  # 添加分红字段
+                    "nav": start_nav
+                })
+
+            # 计算年末持仓 - 只有份额大于0才算持仓
+            if end_shares > 0:
+                end_market_value = end_shares * end_nav if end_nav else 0
+                # 盈亏 = 市值 - 成本 + 累计现金分红
+                end_pnl = end_market_value - end_cost + end_dividend
+
+                year_end_holdings.append({
+                    "product_code": product_code,
+                    "fund_name": fund_name,
+                    "product_name": product_name,
+                    "main_strategy": main_strategy,
+                    "sub_strategy": sub_strategy,
+                    "shares": end_shares,
+                    "cost": end_cost,
+                    "market_value": end_market_value,
+                    "pnl": end_pnl,
+                    "dividend": end_dividend,  # 添加分红字段
+                    "nav": end_nav
+                })
+
+        # 定义排序函数
+        def get_holding_sort_key(holding):
+            """获取持仓排序键（与持仓分析页面保持一致）"""
+            main_strategy = holding.get("main_strategy") or "其他"
+            sub_strategy = holding.get("sub_strategy") or "其他"
+
+            # 第一级：大类策略排序
+            main_strategy_order = {"成长配置": 1, "底仓配置": 2, "尾部对冲": 3, "其他": 4}
+            main_order = main_strategy_order.get(main_strategy, 4)
+
+            # 第二级：细分策略排序
+            sub_order = 999
+            if main_strategy == "成长配置":
+                sub_strategy_order = {
+                    "主观多头": 1, "量化多头": 2, "股票多头": 3,
+                    "股票多空": 4, "多策略": 5, "股债混合": 6, "其他": 7
+                }
+                sub_order = sub_strategy_order.get(sub_strategy, 7)
+            elif main_strategy == "尾部对冲":
+                sub_strategy_order = {"宏观策略": 1, "CTA策略": 2, "其他": 3}
+                sub_order = sub_strategy_order.get(sub_strategy, 3)
+
+            # 第三级：按市值降序
+            market_value = holding.get("market_value", 0)
+
+            return (main_order, sub_order, -market_value)
+
+        # 对持仓列表进行排序
+        year_start_holdings.sort(key=get_holding_sort_key)
+        year_end_holdings.sort(key=get_holding_sort_key)
+
+        # ========== 计算年度产品收益贡献分析 ==========
+        product_contribution = []
+        strategy_contribution_map = {}  # 策略收益汇总
+
+        for product_code, product_trans in product_transactions.items():
+            # 获取产品信息
+            product_name = product_trans[0].product_name
+            fund_name = product_trans[0].fund_name
+            main_strategy = None
+            sub_strategy = None
+
+            if product_code != "未知产品":
+                fund = db.query(Fund).filter(Fund.fund_code == product_code).first()
+                if not fund and fund_name:
+                    search_name = fund_name.replace('龙舟-', '').strip()
+                    fund = db.query(Fund).filter(Fund.fund_name.contains(search_name)).first()
+                if fund and fund.strategy:
+                    main_strategy = fund.strategy.main_strategy
+                    sub_strategy = fund.strategy.sub_strategy
+
+            # 计算年初市值
+            start_shares = 0
+            start_cost = 0
+            for t in product_trans:
+                if t.confirmed_date < year_start:
+                    transaction_type = t.transaction_type.lower()
+                    if '分红' in transaction_type and t.confirmed_amount and t.confirmed_amount > 0:
+                        shares = float(t.confirmed_shares) if t.confirmed_shares else 0
+                        if shares > 0:
+                            start_shares += shares
+                    elif t.confirmed_shares:
+                        shares = float(t.confirmed_shares)
+                        if any(keyword in transaction_type for keyword in ['申购', '买入', '认购', '认购结果', '增持']):
+                            start_shares += shares
+                            if t.confirmed_amount:
+                                start_cost += float(t.confirmed_amount)
+                        elif any(keyword in transaction_type for keyword in ['赎回', '卖出', '减持', '强制调减', '强行调减', '强制赎回']):
+                            if start_shares > 0 and t.confirmed_amount:
+                                cost_ratio = shares / start_shares
+                                start_cost -= start_cost * cost_ratio
+                            start_shares -= shares
+
+            # 获取年初净值
+            start_nav = None
+            start_market_value = 0
+            if product_code != "未知产品" and start_shares > 0:
+                nav_fund_code = product_code
+                fund = db.query(Fund).filter(Fund.fund_code == product_code).first()
+                if not fund and fund_name:
+                    search_name = fund_name.replace('龙舟-', '').strip()
+                    fund = db.query(Fund).filter(Fund.fund_name.contains(search_name)).first()
+                    if fund:
+                        nav_fund_code = fund.fund_code
+
+                start_nav_record = db.query(Nav).filter(
+                    Nav.fund_code == nav_fund_code,
+                    Nav.nav_date <= year_start
+                ).order_by(Nav.nav_date.desc()).first()
+
+                if start_nav_record:
+                    start_nav = float(start_nav_record.unit_nav)
+                    start_market_value = start_shares * start_nav
+
+            # 计算年末市值
+            end_shares = 0
+            end_cost = 0
+            for t in product_trans:
+                if t.confirmed_date <= year_end:
+                    transaction_type = t.transaction_type.lower()
+                    if '分红' in transaction_type and t.confirmed_amount and t.confirmed_amount > 0:
+                        shares = float(t.confirmed_shares) if t.confirmed_shares else 0
+                        if shares > 0:
+                            end_shares += shares
+                    elif t.confirmed_shares:
+                        shares = float(t.confirmed_shares)
+                        if any(keyword in transaction_type for keyword in ['申购', '买入', '认购', '认购结果', '增持']):
+                            end_shares += shares
+                            if t.confirmed_amount:
+                                end_cost += float(t.confirmed_amount)
+                        elif any(keyword in transaction_type for keyword in ['赎回', '卖出', '减持', '强制调减', '强行调减', '强制赎回']):
+                            if end_shares > 0 and t.confirmed_amount:
+                                cost_ratio = shares / end_shares
+                                end_cost -= end_cost * cost_ratio
+                            end_shares -= shares
+
+            # 获取年末净值
+            end_nav = None
+            end_market_value = 0
+            if product_code != "未知产品" and end_shares > 0:
+                nav_fund_code = product_code
+                fund = db.query(Fund).filter(Fund.fund_code == product_code).first()
+                if not fund and fund_name:
+                    search_name = fund_name.replace('龙舟-', '').strip()
+                    fund = db.query(Fund).filter(Fund.fund_name.contains(search_name)).first()
+                    if fund:
+                        nav_fund_code = fund.fund_code
+
+                end_nav_record = db.query(Nav).filter(
+                    Nav.fund_code == nav_fund_code,
+                    Nav.nav_date <= year_end
+                ).order_by(Nav.nav_date.desc()).first()
+
+                if end_nav_record:
+                    end_nav = float(end_nav_record.unit_nav)
+                    end_market_value = end_shares * end_nav
+
+            # 计算年内交易
+            year_purchase = 0  # 年内申购
+            year_redemption = 0  # 年内赎回
+            year_dividend = 0  # 年内现金分红
+
+            for t in product_trans:
+                if year_start <= t.confirmed_date <= year_end:
+                    transaction_type = t.transaction_type.lower()
+
+                    if '分红' in transaction_type and t.confirmed_amount and t.confirmed_amount > 0:
+                        shares = float(t.confirmed_shares) if t.confirmed_shares else 0
+                        # 现金分红：份额为0，金额大于0
+                        if shares == 0:
+                            year_dividend += float(t.confirmed_amount)
+                    elif t.confirmed_amount:
+                        amount = float(t.confirmed_amount)
+                        if any(keyword in transaction_type for keyword in ['申购', '买入', '认购', '认购结果', '增持']):
+                            year_purchase += amount
+                        elif any(keyword in transaction_type for keyword in ['赎回', '卖出', '减持', '强制赎回']):
+                            year_redemption += amount
+
+            # 计算年度收益
+            # 年度收益 = 年末市值 - 年初市值 - 年内申购 + 年内赎回 + 年内分红
+            year_return = end_market_value - start_market_value - year_purchase + year_redemption + year_dividend
+
+            # 计算收益率（基于年初市值+年内申购）
+            investment_base = start_market_value + year_purchase
+            return_rate = (year_return / investment_base * 100) if investment_base > 0 else 0
+
+            # 只包含有交易或持仓的产品
+            if start_market_value > 0 or end_market_value > 0 or year_purchase > 0 or year_redemption > 0:
+                product_contribution.append({
+                    "product_code": product_code,
+                    "product_name": product_name,
+                    "fund_name": fund_name,
+                    "main_strategy": main_strategy or "其他",
+                    "sub_strategy": sub_strategy,
+                    "year_start_value": round(start_market_value, 2),
+                    "year_end_value": round(end_market_value, 2),
+                    "year_purchase": round(year_purchase, 2),
+                    "year_redemption": round(year_redemption, 2),
+                    "year_dividend": round(year_dividend, 2),
+                    "year_return": round(year_return, 2),
+                    "return_rate": round(return_rate, 2)
+                })
+
+                # 汇总策略收益
+                strategy_key = main_strategy or "其他"
+                if strategy_key not in strategy_contribution_map:
+                    strategy_contribution_map[strategy_key] = 0
+                strategy_contribution_map[strategy_key] += year_return
+
+        # 按收益从高到低排序
+        product_contribution.sort(key=lambda x: x["year_return"], reverse=True)
+
+        # 计算策略收益占比
+        total_return = sum(strategy_contribution_map.values())
+        strategy_contribution = []
+        for strategy, return_value in strategy_contribution_map.items():
+            percentage = (return_value / total_return * 100) if total_return != 0 else 0
+            strategy_contribution.append({
+                "strategy": strategy,
+                "total_return": round(return_value, 2),
+                "percentage": round(percentage, 2)
+            })
+
+        # 策略按固定顺序排序
+        strategy_order = {"成长配置": 1, "底仓配置": 2, "尾部对冲": 3, "其他": 4}
+        strategy_contribution.sort(key=lambda x: strategy_order.get(x["strategy"], 4))
+
+        # 计算汇总数据
+        year_start_total = sum(h["market_value"] for h in year_start_holdings)
+        year_end_total = sum(h["market_value"] for h in year_end_holdings)
+
+        contribution_summary = {
+            "year_start_total": round(year_start_total, 2),
+            "year_end_total": round(year_end_total, 2),
+            "total_return": round(total_return, 2),
+            "total_return_rate": round((total_return / year_start_total * 100) if year_start_total > 0 else 0, 2)
+        }
+
+        return {
+            "client_info": client_info,
+            "year_start_holdings": year_start_holdings,
+            "year_end_holdings": year_end_holdings,
+            "year_contribution_analysis": {
+                "strategy_contribution": strategy_contribution,
+                "product_contribution": product_contribution,
+                "summary": contribution_summary
+            }
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取持仓变动分析失败: {str(e)}")

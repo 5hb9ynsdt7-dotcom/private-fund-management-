@@ -514,6 +514,10 @@ async def get_client_position_detail(
         sub_strategy_stats = {}  # sub_strategy -> market_value
         
         for position, fund, strategy in position_data:
+            # 过滤掉份额为0或None的持仓
+            if not position.shares or position.shares <= 0:
+                continue
+
             # 获取最新净值
             nav_query = db.query(Nav).filter(Nav.fund_code == position.fund_code)
             if as_of_date:

@@ -164,7 +164,7 @@
           :row-class-name="getRowClassName"
           style="width: 100%"
         >
-          <el-table-column label="基金名称" width="380">
+          <el-table-column label="基金名称" width="304">
             <template #default="{ row }">
               {{ row.short_name || row.fund_name }}
             </template>
@@ -995,6 +995,12 @@ onMounted(() => {
 
 .position-table {
   margin-bottom: 16px;
+  font-size: 14.5px;
+}
+
+.position-table :deep(.el-table__header th),
+.position-table :deep(.el-table__body td) {
+  font-size: 14.5px;
 }
 
 /* 表格行样式 */

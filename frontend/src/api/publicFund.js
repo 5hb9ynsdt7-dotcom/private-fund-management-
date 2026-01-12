@@ -167,6 +167,16 @@ export default {
     })
   },
 
+  /**
+   * 批量刷新所有基金净值
+   */
+  refreshAllNav() {
+    return request({
+      url: '/api/public-fund/nav/refresh-all',
+      method: 'post'
+    })
+  },
+
   // ========== 投研分析 ==========
 
   /**

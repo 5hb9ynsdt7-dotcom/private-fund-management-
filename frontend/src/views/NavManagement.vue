@@ -99,7 +99,6 @@
         border
         highlight-current-row
         @selection-change="handleSelectionChange"
-        @row-click="handleRowClick"
       >
         <!-- 选择列 -->
         <el-table-column
@@ -137,7 +136,6 @@
         <el-table-column
           prop="fund_name"
           label="基金名称"
-          min-width="200"
           sortable
           show-overflow-tooltip
         >
@@ -146,6 +144,30 @@
             <span v-if="row.dividend_count > 0" class="dividend-badge">
               (分红{{ row.dividend_count }}次)
             </span>
+          </template>
+        </el-table-column>
+
+        <!-- 产品特征 -->
+        <el-table-column
+          prop="product_features"
+          label="产品特征"
+          align="center"
+        >
+          <template #default="{ row }">
+            <div
+              class="product-features-cell"
+              @click.stop="openProductFeaturesDialog(row)"
+            >
+              <span v-if="row.product_features" class="features-text">
+                {{ row.product_features }}
+              </span>
+              <span v-else class="features-placeholder">
+                点击编辑产品特征
+              </span>
+              <el-icon class="edit-icon">
+                <Edit />
+              </el-icon>
+            </div>
           </template>
         </el-table-column>
 
@@ -333,6 +355,49 @@
       </template>
     </el-dialog>
 
+    <!-- 产品特征编辑对话框 -->
+    <el-dialog
+      v-model="productFeaturesDialogVisible"
+      :title="`编辑产品特征 - ${currentEditFund?.fund_code} ${currentEditFund?.fund_name}`"
+      width="700px"
+      :close-on-click-modal="false"
+    >
+      <el-form label-width="100px">
+        <el-form-item label="基金代码">
+          <el-text>{{ currentEditFund?.fund_code }}</el-text>
+        </el-form-item>
+
+        <el-form-item label="基金名称">
+          <el-text>{{ currentEditFund?.fund_name }}</el-text>
+        </el-form-item>
+
+        <el-form-item label="产品特征">
+          <el-input
+            v-model="editingProductFeatures"
+            type="textarea"
+            :rows="8"
+            placeholder="请输入产品特征描述"
+            maxlength="1000"
+            show-word-limit
+          />
+          <div class="form-tip">
+            可以输入产品的主要特征、投资策略、风险等级等信息
+          </div>
+        </el-form-item>
+      </el-form>
+
+      <template #footer>
+        <el-button @click="productFeaturesDialogVisible = false">取消</el-button>
+        <el-button
+          type="primary"
+          @click="handleSaveProductFeatures"
+          :loading="productFeaturesSubmitting"
+        >
+          保存
+        </el-button>
+      </template>
+    </el-dialog>
+
     <!-- 分红录入/编辑对话框 -->
     <el-dialog
       v-model="dividendFormDialogVisible"
@@ -432,6 +497,12 @@ const dividendList = ref([])
 const dividendFormMode = ref('add') // 'add' 或 'edit'
 const dividendFormRef = ref(null)
 const currentDividend = ref(null)
+
+// 产品特征编辑相关状态
+const productFeaturesDialogVisible = ref(false)
+const productFeaturesSubmitting = ref(false)
+const currentEditFund = ref(null)
+const editingProductFeatures = ref('')
 
 // 分红表单
 const dividendForm = ref({
@@ -554,6 +625,76 @@ const viewFundDetail = (fundCode) => {
     name: 'FundNavDetail',
     params: { fundCode }
   })
+}
+
+// 打开产品特征编辑对话框
+const openProductFeaturesDialog = (fund) => {
+  currentEditFund.value = fund
+  editingProductFeatures.value = fund.product_features || ''
+  productFeaturesDialogVisible.value = true
+}
+
+// 保存产品特征
+const handleSaveProductFeatures = async () => {
+  productFeaturesSubmitting.value = true
+
+  try {
+    const response = await fetch(`http://localhost:8000/api/funds/${currentEditFund.value.fund_code}/product-features`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        product_features: editingProductFeatures.value || null
+      })
+    })
+
+    const result = await response.json()
+
+    if (result.success) {
+      // 更新本地数据
+      const fund = fundList.value.find(f => f.fund_code === currentEditFund.value.fund_code)
+      if (fund) {
+        fund.product_features = editingProductFeatures.value
+      }
+
+      ElMessage.success('产品特征更新成功')
+      productFeaturesDialogVisible.value = false
+    } else {
+      ElMessage.error(`更新失败: ${result.message}`)
+    }
+  } catch (error) {
+    console.error('更新产品特征失败:', error)
+    ElMessage.error(`更新产品特征失败: ${error.message}`)
+  } finally {
+    productFeaturesSubmitting.value = false
+  }
+}
+
+// 更新产品特征 (保留旧方法以防其他地方使用)
+const updateProductFeatures = async (row) => {
+  try {
+    const response = await fetch(`http://localhost:8000/api/funds/${row.fund_code}/product-features`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        product_features: row.product_features || null
+      })
+    })
+
+    const result = await response.json()
+
+    if (result.success) {
+      ElMessage.success(`成功更新 ${row.fund_code} 的产品特征`)
+    } else {
+      ElMessage.error(`更新失败: ${result.message}`)
+    }
+  } catch (error) {
+    console.error('更新产品特征失败:', error)
+    ElMessage.error(`更新产品特征失败: ${error.message}`)
+  }
 }
 
 // 日期排序方法
@@ -1038,6 +1179,56 @@ onMounted(() => {
   font-weight: 500;
 }
 
+/* 产品特征单元格样式 */
+.product-features-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: all 0.3s;
+  min-height: 36px;
+}
+
+.product-features-cell:hover {
+  background-color: #ecf5ff;
+}
+
+.product-features-cell .features-text {
+  flex: 1;
+  color: #303133;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.product-features-cell .features-placeholder {
+  flex: 1;
+  color: #909399;
+  font-style: italic;
+  text-align: center;
+}
+
+.product-features-cell .edit-icon {
+  color: #409EFF;
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.product-features-cell:hover .edit-icon {
+  transform: scale(1.1);
+}
+
+.form-tip {
+  margin-top: 8px;
+  color: #909399;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .table-header {
   display: flex;
   justify-content: space-between;
@@ -1069,12 +1260,11 @@ onMounted(() => {
 }
 
 .el-table td {
-  padding: 12px 0;
+  padding: 8px 0;
 }
 
 /* 行悬停样式 */
 .el-table :deep(.el-table__row) {
-  cursor: pointer;
   transition: background-color 0.2s;
 }
 

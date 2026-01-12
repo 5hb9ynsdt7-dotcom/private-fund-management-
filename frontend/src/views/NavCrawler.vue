@@ -151,7 +151,17 @@
               label="基金名称"
               min-width="200"
               show-overflow-tooltip
-            />
+            >
+              <template #default="{ row }">
+                <span>{{ row.fund_name }}</span>
+                <span v-if="row.latest_nav_date" style="color: #909399; font-size: 12px;">
+                  （{{ row.latest_nav_date }}）
+                </span>
+                <span v-else style="color: #C0C4CC; font-size: 12px;">
+                  （无净值数据）
+                </span>
+              </template>
+            </el-table-column>
             <el-table-column
               prop="noah_product_id"
               label="诺亚产品ID"

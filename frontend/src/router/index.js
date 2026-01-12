@@ -133,6 +133,18 @@ const routes = [
     name: 'PortfolioDetail',
     component: () => import('../views/Portfolio/PortfolioDetail.vue'),
     meta: { title: '组合详情' }
+  },
+  {
+    path: '/portfolio-backtest',
+    name: 'PortfolioBacktest',
+    component: () => import('../views/PortfolioBacktest.vue'),
+    meta: { title: '组合回测' }
+  },
+  {
+    path: '/performance-pk',
+    name: 'PerformancePK',
+    component: () => import('../views/PerformancePK.vue'),
+    meta: { title: '业绩PK' }
   }
 ]
 

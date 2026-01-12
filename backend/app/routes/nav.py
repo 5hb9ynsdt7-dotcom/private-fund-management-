@@ -445,6 +445,8 @@ async def get_funds_with_nav(
             fund_list.append({
                 "fund_code": fund.fund_code,
                 "fund_name": fund.fund_name,
+                "short_name": fund.short_name,  # 添加简称字段
+                "product_features": fund.product_features,  # 添加产品特征字段
                 "latest_nav_date": latest_nav[0].isoformat() if latest_nav else None,
                 "dividend_count": dividend_count
             })

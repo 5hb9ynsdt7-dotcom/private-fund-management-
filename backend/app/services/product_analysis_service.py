@@ -69,9 +69,16 @@ class ProductAnalysisService:
             peak_recovery = self._calculate_peak_recovery_time(df)
             max_drawdown_analysis = self._calculate_max_drawdown_recovery(df)
 
+            # 获取策略信息
+            main_strategy = fund.strategy.main_strategy if fund.strategy else '未分类'
+            sub_strategy = fund.strategy.sub_strategy if fund.strategy else '未分类'
+
             return {
                 'fund_code': fund_code,
                 'fund_name': fund.fund_name,
+                'short_name': fund.short_name or fund.fund_name,  # 简称，如果没有则使用全称
+                'category_level1': main_strategy,
+                'category_level2': sub_strategy,
                 'data_start_date': df['date'].min().strftime('%Y-%m-%d'),
                 'data_end_date': df['date'].max().strftime('%Y-%m-%d'),
                 'total_days': len(df),
@@ -232,53 +239,41 @@ class ProductAnalysisService:
             raise
 
     def _calculate_monthly_analysis(self, df: pd.DataFrame) -> Dict:
-        """计算月度分析 - 使用月末最后一个周五的净值"""
+        """计算月度分析 - 使用月末最后一天的净值（和组合回测页面逻辑一致）"""
         try:
             # 确保date列是datetime类型
             df['date'] = pd.to_datetime(df['date'])
             df = df.sort_values('date').reset_index(drop=True)
 
-            # 添加星期几信息（0=周一，4=周五）
-            df['weekday'] = df['date'].dt.weekday
+            # 添加年月信息
             df['year_month'] = df['date'].dt.to_period('M')
 
-            # 找到每个月最后一个周五的净值
-            last_friday_navs = []
+            # 找到每个月最后一天的净值
+            month_end_navs = []
             for year_month in df['year_month'].unique():
                 month_data = df[df['year_month'] == year_month]
-                # 找到该月所有周五
-                fridays = month_data[month_data['weekday'] == 4]
-                if len(fridays) > 0:
-                    # 取最后一个周五
-                    last_friday = fridays.iloc[-1]
-                    last_friday_navs.append({
-                        'year_month': year_month,
-                        'date': last_friday['date'],
-                        'nav': last_friday['nav']
-                    })
-                else:
-                    # 如果该月没有周五数据，取该月最后一天
-                    last_day = month_data.iloc[-1]
-                    last_friday_navs.append({
-                        'year_month': year_month,
-                        'date': last_day['date'],
-                        'nav': last_day['nav']
-                    })
+                # 取该月最后一天
+                last_day = month_data.iloc[-1]
+                month_end_navs.append({
+                    'year_month': year_month,
+                    'date': last_day['date'],
+                    'nav': last_day['nav']
+                })
 
             # 转换为DataFrame
-            friday_df = pd.DataFrame(last_friday_navs)
-            friday_df = friday_df.sort_values('date').reset_index(drop=True)
+            month_end_df = pd.DataFrame(month_end_navs)
+            month_end_df = month_end_df.sort_values('date').reset_index(drop=True)
 
-            # 计算月度收益（当月最后周五 / 上月最后周五 - 1）
+            # 计算月度收益（本月末净值 / 上月末净值 - 1）
             monthly_returns_list = []
-            for i in range(1, len(friday_df)):
-                prev_nav = friday_df.iloc[i-1]['nav']
-                curr_nav = friday_df.iloc[i]['nav']
+            for i in range(1, len(month_end_df)):
+                prev_nav = month_end_df.iloc[i-1]['nav']
+                curr_nav = month_end_df.iloc[i]['nav']
                 monthly_return = round((curr_nav / prev_nav - 1) * 100, 2)
                 monthly_returns_list.append({
-                    'year_month': friday_df.iloc[i]['year_month'],
+                    'year_month': month_end_df.iloc[i]['year_month'],
                     'monthly_return': monthly_return,
-                    'date': friday_df.iloc[i]['date']
+                    'date': month_end_df.iloc[i]['date']
                 })
 
             monthly_data = pd.DataFrame(monthly_returns_list)
@@ -311,6 +306,12 @@ class ProductAnalysisService:
                 yearly_monthly_table = []
                 years = sorted(monthly_data['year'].unique(), reverse=True)  # 从近到远
 
+                # 构建月末净值字典，方便查询
+                month_end_nav_dict = {}
+                for i, row in month_end_df.iterrows():
+                    ym = str(row['year_month'])
+                    month_end_nav_dict[ym] = row['nav']
+
                 for year in years:
                     year_data = monthly_data[monthly_data['year'] == year]
 
@@ -323,19 +324,26 @@ class ProductAnalysisService:
                         else:
                             monthly_returns[f'month_{month}'] = None
 
-                    # 计算该年度的胜率和年度总收益
+                    # 计算该年度的胜率
                     year_returns = [monthly_returns[f'month_{i}'] for i in range(1, 13) if monthly_returns[f'month_{i}'] is not None]
                     if year_returns:
                         positive_count = sum(1 for r in year_returns if r > 0)
                         year_win_rate = round((positive_count / len(year_returns)) * 100, 2)
-                        # 计算年度累计收益（复合收益率）
-                        year_total_return = 1.0
-                        for r in year_returns:
-                            year_total_return *= (1 + r / 100)
-                        year_total_return = round((year_total_return - 1) * 100, 2)
                     else:
                         year_win_rate = 0
-                        year_total_return = 0
+
+                    # 计算年度总收益 = (本年末净值 - 去年12月末净值) / 去年12月末净值
+                    # 和组合回测页面逻辑一致
+                    year_end_ym = f"{year}-12"
+                    prev_year_end_ym = f"{year-1}-12"
+
+                    if year_end_ym in month_end_nav_dict and prev_year_end_ym in month_end_nav_dict:
+                        year_end_nav = month_end_nav_dict[year_end_ym]
+                        prev_year_end_nav = month_end_nav_dict[prev_year_end_ym]
+                        year_total_return = round((year_end_nav / prev_year_end_nav - 1) * 100, 2)
+                    else:
+                        # 如果没有去年12月的数据，无法计算准确的年度收益
+                        year_total_return = None
 
                     yearly_monthly_table.append({
                         'year': int(year),

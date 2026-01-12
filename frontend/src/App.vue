@@ -77,6 +77,16 @@
             <el-icon><TrendCharts /></el-icon>
             <span>实盘组合</span>
           </el-menu-item>
+
+          <el-menu-item index="/portfolio-backtest">
+            <el-icon><DataBoard /></el-icon>
+            <span>组合回测</span>
+          </el-menu-item>
+
+          <el-menu-item index="/performance-pk">
+            <el-icon><TrendCharts /></el-icon>
+            <span>业绩PK</span>
+          </el-menu-item>
         </el-menu>
       </el-aside>
 

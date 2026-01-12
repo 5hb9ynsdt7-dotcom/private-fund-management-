@@ -90,6 +90,7 @@
         <el-radio-button value="holdings">当前持仓</el-radio-button>
         <el-radio-button value="cleared">已清仓产品</el-radio-button>
         <el-radio-button value="stage-analysis">阶段收益分析</el-radio-button>
+        <el-radio-button value="annual-review">年度收益复盘</el-radio-button>
       </el-radio-group>
     </el-card>
     
@@ -372,7 +373,12 @@
     <div v-if="currentView === 'stage-analysis'">
       <StageAnalysis :group-id="groupId" />
     </div>
-    
+
+    <!-- 年度收益复盘 -->
+    <div v-if="currentView === 'annual-review'">
+      <AnnualReview :group-id="groupId" />
+    </div>
+
     <!-- 交易明细对话框 -->
     <el-dialog 
       v-model="detailDialogVisible" 
@@ -456,6 +462,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { transactionAPI } from '@/api/transaction'
 import StageAnalysis from '@/components/StageAnalysis.vue'
+import AnnualReview from '@/components/AnnualReview.vue'
 
 const route = useRoute()
 const router = useRouter()

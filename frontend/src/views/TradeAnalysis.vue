@@ -163,13 +163,24 @@
       <template #header>
         <div class="table-header">
           <span>交易客户列表</span>
-          <el-button @click="refreshData" size="small">
-            <el-icon><Refresh /></el-icon>
-            刷新
-          </el-button>
+          <div class="table-actions">
+            <el-button
+              type="danger"
+              size="small"
+              :disabled="selectedClients.length === 0"
+              @click="batchDeleteClients"
+            >
+              <el-icon><Delete /></el-icon>
+              批量删除 ({{ selectedClients.length }})
+            </el-button>
+            <el-button @click="refreshData" size="small">
+              <el-icon><Refresh /></el-icon>
+              刷新
+            </el-button>
+          </div>
         </div>
       </template>
-      
+
       <el-table
         v-loading="tableLoading"
         :data="tableData"
@@ -177,7 +188,14 @@
         stripe
         border
         @row-click="handleRowClick"
+        @selection-change="handleSelectionChange"
       >
+        <el-table-column
+          type="selection"
+          width="55"
+          fixed="left"
+        />
+
         <el-table-column
           prop="group_id"
           label="集团号"
@@ -338,6 +356,7 @@ const tableData = ref([])
 const fileList = ref([])
 const overrideExisting = ref(false)
 const uploadRef = ref()
+const selectedClients = ref([])  // 选中的客户列表
 
 // 统计数据
 const statistics = reactive({
@@ -504,6 +523,10 @@ const handleRowClick = (row) => {
   console.log('点击行:', row)
 }
 
+const handleSelectionChange = (selection) => {
+  selectedClients.value = selection
+}
+
 const viewDetail = (row) => {
   router.push(`/trade/${row.group_id}`)
 }
@@ -526,9 +549,9 @@ const deleteClient = async (row) => {
         dangerouslyUseHTMLString: true
       }
     )
-    
+
     const response = await transactionAPI.deleteClientTransactions(row.group_id)
-    
+
     if (response.success) {
       ElMessage.success(response.message || '删除成功')
       refreshData()
@@ -540,6 +563,46 @@ const deleteClient = async (row) => {
       console.error('删除交易记录失败:', error)
       const errorMsg = error.response?.data?.detail || error.message || '网络错误'
       ElMessage.error(`删除交易记录失败: ${errorMsg}`)
+    }
+  }
+}
+
+// 批量删除客户交易记录
+const batchDeleteClients = async () => {
+  if (selectedClients.value.length === 0) {
+    ElMessage.warning('请先选择要删除的客户')
+    return
+  }
+
+  try {
+    const count = selectedClients.value.length
+    const groupIds = selectedClients.value.map(client => client.group_id)
+
+    await ElMessageBox.confirm(
+      `确定要删除选中的 ${count} 个客户的所有交易记录吗？此操作不可恢复！`,
+      '批量删除确认',
+      {
+        confirmButtonText: '确定删除',
+        cancelButtonText: '取消',
+        type: 'warning',
+        dangerouslyUseHTMLString: true
+      }
+    )
+
+    const response = await transactionAPI.batchDeleteClientTransactions(groupIds)
+
+    if (response.success) {
+      ElMessage.success(response.message || '批量删除成功')
+      selectedClients.value = []
+      refreshData()
+    } else {
+      ElMessage.error(response.message || '批量删除失败')
+    }
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.error('批量删除交易记录失败:', error)
+      const errorMsg = error.response?.data?.detail || error.message || '网络错误'
+      ElMessage.error(`批量删除交易记录失败: ${errorMsg}`)
     }
   }
 }
@@ -645,6 +708,12 @@ onMounted(() => {
 .table-header {
   display: flex;
   justify-content: space-between;
+  align-items: center;
+}
+
+.table-actions {
+  display: flex;
+  gap: 8px;
   align-items: center;
 }
 

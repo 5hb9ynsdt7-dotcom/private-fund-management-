@@ -93,6 +93,7 @@
             <el-option label="500指增" value="500指增" />
             <el-option label="A500指增" value="A500指增" />
             <el-option label="1000指增" value="1000指增" />
+            <el-option label="小市值" value="小市值" />
             <el-option label="量化选股" value="量化选股" />
           </el-select>
         </template>
@@ -161,6 +162,7 @@
             <el-checkbox label="500指增" />
             <el-checkbox label="A500指增" />
             <el-checkbox label="1000指增" />
+            <el-checkbox label="小市值" />
             <el-checkbox label="量化选股" />
           </el-checkbox-group>
         </el-form-item>
@@ -183,6 +185,7 @@
             <el-option label="500指增" value="500指增" />
             <el-option label="A500指增" value="A500指增" />
             <el-option label="1000指增" value="1000指增" />
+            <el-option label="小市值" value="小市值" />
             <el-option label="量化选股" value="量化选股" />
           </el-select>
         </el-form-item>
@@ -298,8 +301,9 @@ const productTypeOrder = {
   '500指增': 2,
   'A500指增': 3,
   '1000指增': 4,
-  '量化选股': 5,
-  '其他': 6
+  '小市值': 5,
+  '量化选股': 6,
+  '其他': 7
 }
 
 // 计算属性：筛选后的产品列表（按产品类型排序）

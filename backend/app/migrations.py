@@ -201,6 +201,28 @@ def add_fund_schedule_fee_structure(engine):
         raise
 
 
+def add_product_features(engine):
+    """为Fund表添加product_features字段"""
+    logger.info("检查 fund.product_features 字段...")
+
+    try:
+        with engine.connect() as conn:
+            if check_column_exists(engine, 'fund', 'product_features'):
+                logger.info("✓ fund.product_features 字段已存在")
+                return
+
+            logger.info("添加 fund.product_features 字段...")
+            conn.execute(text("""
+                ALTER TABLE fund
+                ADD COLUMN product_features VARCHAR(200)
+            """))
+            conn.commit()
+            logger.info("✓ fund.product_features 字段添加成功")
+    except Exception as e:
+        logger.error(f"添加 fund.product_features 字段失败: {e}")
+        raise
+
+
 def run_migrations():
     """
     执行所有数据库迁移
@@ -221,6 +243,7 @@ def run_migrations():
         add_fund_timestamps(engine)  # 新增：添加时间戳字段
         create_weekly_excess_cache_table(engine)  # 新增：创建周度超额缓存表
         add_fund_schedule_fee_structure(engine)  # 新增：添加费用结构字段
+        add_product_features(engine)  # 新增：添加产品特征字段
 
         logger.info("=" * 60)
         logger.info("✓ 所有数据库迁移完成")

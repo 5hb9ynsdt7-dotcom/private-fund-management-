@@ -48,6 +48,14 @@ export const transactionAPI = {
   },
 
   /**
+   * 批量删除客户交易记录
+   * @param {Array<string>} groupIds - 客户集团号列表
+   */
+  batchDeleteClientTransactions(groupIds) {
+    return request.post('/api/transaction/clients/batch-delete', groupIds)
+  },
+
+  /**
    * 获取交易统计信息
    * @param {Object} params - 查询参数
    */
@@ -61,6 +69,28 @@ export const transactionAPI = {
    */
   getClientAnalysis(groupId) {
     return request.get(`/api/transaction/clients/${groupId}/analysis`)
+  },
+
+  /**
+   * 获取客户年度收益复盘
+   * @param {string} groupId - 客户集团号
+   * @param {number} year - 复盘年份
+   */
+  getClientAnnualReview(groupId, year) {
+    return request.get(`/api/transaction/clients/${groupId}/annual-review`, {
+      params: { year }
+    })
+  },
+
+  /**
+   * 获取客户持仓变动分析
+   * @param {string} groupId - 客户集团号
+   * @param {number} year - 分析年份
+   */
+  getHoldingsChangeAnalysis(groupId, year) {
+    return request.get(`/api/transaction/clients/${groupId}/holdings-change-analysis`, {
+      params: { year }
+    })
   }
 }
 

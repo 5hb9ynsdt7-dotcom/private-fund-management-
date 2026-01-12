@@ -168,7 +168,8 @@ async def get_mapped_funds(db: Session = Depends(get_db)):
     如果没有updated_at字段，则按基金代码降序排列
     """
     try:
-        from ..models import Fund
+        from ..models import Fund, Nav
+        from sqlalchemy import func
 
         # 尝试按updated_at降序排列，如果字段不存在则按fund_code降序
         try:
@@ -177,15 +178,20 @@ async def get_mapped_funds(db: Session = Depends(get_db)):
             # 如果updated_at字段不存在，回退到按fund_code降序
             funds = db.query(Fund).order_by(Fund.fund_code.desc()).all()
 
-        fund_list = [
-            {
+        fund_list = []
+        for fund in funds:
+            # 获取该基金的最新净值日期
+            latest_nav = db.query(func.max(Nav.nav_date))\
+                .filter(Nav.fund_code == fund.fund_code)\
+                .scalar()
+
+            fund_list.append({
                 'fund_code': fund.fund_code,
                 'fund_name': fund.fund_name,
                 'noah_product_id': fund.noah_product_id,
-                'has_mapping': fund.noah_product_id is not None and fund.noah_product_id != ''
-            }
-            for fund in funds
-        ]
+                'has_mapping': fund.noah_product_id is not None and fund.noah_product_id != '',
+                'latest_nav_date': latest_nav.isoformat() if latest_nav else None
+            })
 
         mapped_count = sum(1 for f in fund_list if f['has_mapping'])
 

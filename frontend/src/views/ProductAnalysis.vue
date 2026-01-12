@@ -2,8 +2,19 @@
   <div class="product-analysis">
     <!-- 页面头部 -->
     <div class="page-header">
-      <h2>产品分析</h2>
-      <p class="page-description">产品全维度指标分析与风险评估</p>
+      <div>
+        <h2>产品分析</h2>
+        <p class="page-description">产品全维度指标分析与风险评估</p>
+      </div>
+      <el-button
+        v-if="analysisData"
+        type="primary"
+        @click="downloadPDF"
+        :loading="downloadLoading"
+      >
+        <el-icon><Download /></el-icon>
+        下载分析报告
+      </el-button>
     </div>
 
     <!-- 产品选择 -->
@@ -34,6 +45,23 @@
         </el-col>
       </el-row>
     </el-card>
+
+    <!-- 导出内容区域 -->
+    <div ref="exportContentRef" class="export-content">
+      <!-- 产品信息标题 -->
+      <div v-if="analysisData" class="product-info-header">
+      <div class="product-title-section">
+        <h3 class="product-title">{{ analysisData.short_name }}</h3>
+        <div class="product-meta">
+          <span class="strategy-tag">{{ analysisData.category_level1 }}</span>
+          <span class="strategy-divider">|</span>
+          <span class="strategy-tag">{{ analysisData.category_level2 }}</span>
+        </div>
+      </div>
+      <div class="analysis-period">
+        分析周期：{{ formatDate(analysisData.data_start_date) }} - {{ formatDate(analysisData.data_end_date) }}
+      </div>
+    </div>
 
     <!-- 基础指标卡片 -->
     <el-row :gutter="24" class="stats-section" v-if="analysisData">
@@ -316,10 +344,12 @@
             </el-table-column>
             <el-table-column label="年度收益" align="center">
               <template #default="scope">
-                <span class="percent-text"
+                <span v-if="scope.row.year_return !== null && scope.row.year_return !== undefined"
+                      class="percent-text"
                       :style="`color: ${scope.row.year_return >= 0 ? '#f56c6c' : '#67c23a'}; font-weight: 600;`">
                   {{ scope.row.year_return >= 0 ? '+' : '' }}{{ scope.row.year_return }}%
                 </span>
+                <span v-else style="color: #C0C4CC;">-</span>
               </template>
             </el-table-column>
             <el-table-column label="胜率" align="center" fixed="right">
@@ -327,9 +357,6 @@
                 <span class="percent-text" style="color: #409eff; font-weight: 600;">
                   {{ scope.row.win_rate }}%
                 </span>
-                <div style="font-size: 11px; color: #9ca3af; margin-top: 2px;">
-                  {{ scope.row.total_months }}个月
-                </div>
               </template>
             </el-table-column>
           </el-table>
@@ -338,7 +365,7 @@
     </el-row>
 
     <!-- 月度收益分析 -->
-    <el-row :gutter="24" v-if="analysisData" align="stretch">
+    <el-row :gutter="24" v-if="analysisData">
       <el-col :span="16">
         <el-card class="monthly-card">
           <template #header>
@@ -594,6 +621,8 @@
         </el-card>
       </el-col>
     </el-row>
+    </div>
+    <!-- 导出内容区域结束 -->
 
     <!-- 空状态 -->
     <el-empty v-if="!analysisData && !loading" description="请选择产品进行分析" />
@@ -603,17 +632,20 @@
 <script setup>
 import { ref, onMounted, nextTick } from 'vue'
 import axios from 'axios'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElLoading } from 'element-plus'
 import * as echarts from 'echarts'
+import html2canvas from 'html2canvas'
 
 const API_BASE = import.meta.env.PROD ? '' : 'http://localhost:8000'
 
 const loading = ref(false)
+const downloadLoading = ref(false)
 const selectedFundCode = ref('')
 const fundList = ref([])
 const analysisData = ref(null)
 const navChartRef = ref(null)
 const monthlyReturnChartRef = ref(null)
+const exportContentRef = ref(null)  // 用于图片导出的内容区域
 let navChart = null
 let monthlyReturnChart = null
 
@@ -628,6 +660,16 @@ const loadFundList = async () => {
   } catch (error) {
     ElMessage.error('加载产品列表失败')
   }
+}
+
+// 格式化日期
+const formatDate = (dateStr) => {
+  if (!dateStr) return ''
+  const date = new Date(dateStr)
+  const year = date.getFullYear()
+  const month = date.getMonth() + 1
+  const day = date.getDate()
+  return `${year}年${month}月${day}日`
 }
 
 const loadProductAnalysis = async () => {
@@ -823,6 +865,92 @@ const renderMonthlyReturnChart = () => {
 
   monthlyReturnChart.setOption(option)
 }
+
+// 下载为图片
+const downloadPDF = async () => {
+  if (!exportContentRef.value || !analysisData.value) {
+    ElMessage.warning('暂无分析数据')
+    return
+  }
+
+  downloadLoading.value = true
+  const loadingInstance = ElLoading.service({
+    lock: true,
+    text: '正在生成图片...',
+    background: 'rgba(0, 0, 0, 0.7)'
+  })
+
+  try {
+    await nextTick()
+
+    // 等待所有图表渲染完成
+    await new Promise(resolve => setTimeout(resolve, 500))
+
+    // 临时设置导出区域的宽度为足够大，确保内容不被截断
+    const originalWidth = exportContentRef.value.style.width
+    const originalMinWidth = exportContentRef.value.style.minWidth
+    exportContentRef.value.style.width = '1600px'
+    exportContentRef.value.style.minWidth = '1600px'
+
+    // 等待DOM更新
+    await nextTick()
+
+    // 重新调整图表大小以适应新宽度
+    if (navChart) {
+      navChart.resize()
+    }
+    if (monthlyReturnChart) {
+      monthlyReturnChart.resize()
+    }
+
+    await new Promise(resolve => setTimeout(resolve, 300))
+
+    // 使用html2canvas截取内容
+    const canvas = await html2canvas(exportContentRef.value, {
+      scale: 2, // 适当降低以控制文件大小，但保证清晰度
+      useCORS: true,
+      logging: false,
+      backgroundColor: '#f5f5f5',
+      width: 1600,
+      height: exportContentRef.value.scrollHeight,
+      x: 0,
+      y: 0
+    })
+
+    // 恢复原始宽度
+    exportContentRef.value.style.width = originalWidth
+    exportContentRef.value.style.minWidth = originalMinWidth
+
+    // 恢复图表大小
+    await nextTick()
+    if (navChart) {
+      navChart.resize()
+    }
+    if (monthlyReturnChart) {
+      monthlyReturnChart.resize()
+    }
+
+    // 转换为图片并下载
+    canvas.toBlob((blob) => {
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      const fileName = `${analysisData.value.fund_code}-${analysisData.value.short_name}-分析报告-${new Date().toISOString().split('T')[0]}.png`
+      link.href = url
+      link.download = fileName
+      link.click()
+      URL.revokeObjectURL(url)
+
+      ElMessage.success('图片已下载')
+    }, 'image/png', 1.0)
+
+  } catch (error) {
+    console.error('生成图片失败:', error)
+    ElMessage.error('生成图片失败，请重试')
+  } finally {
+    downloadLoading.value = false
+    loadingInstance.close()
+  }
+}
 </script>
 
 <style scoped>
@@ -832,6 +960,9 @@ const renderMonthlyReturnChart = () => {
 
 .page-header {
   margin-bottom: 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
 }
 
 .page-header h2 {
@@ -849,6 +980,63 @@ const renderMonthlyReturnChart = () => {
 
 .filter-section {
   margin-bottom: 24px;
+}
+
+/* 导出内容区域样式 */
+.export-content {
+  background-color: #f5f5f5;
+  padding: 20px;
+}
+
+.product-info-header {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 12px;
+  padding: 24px 32px;
+  margin-bottom: 24px;
+  color: white;
+  box-shadow: 0 4px 20px rgba(102, 126, 234, 0.25);
+}
+
+.product-title-section {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.product-title {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 600;
+  color: white;
+  letter-spacing: 0.5px;
+}
+
+.product-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.strategy-tag {
+  background: rgba(255, 255, 255, 0.2);
+  padding: 4px 12px;
+  border-radius: 16px;
+  font-size: 13px;
+  font-weight: 500;
+  backdrop-filter: blur(10px);
+}
+
+.strategy-divider {
+  color: rgba(255, 255, 255, 0.6);
+  font-weight: 300;
+}
+
+.analysis-period {
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.9);
+  font-weight: 400;
+  letter-spacing: 0.3px;
 }
 
 .stats-section {

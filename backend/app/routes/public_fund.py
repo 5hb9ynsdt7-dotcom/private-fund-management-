@@ -231,6 +231,66 @@ async def refresh_fund_nav(
         )
 
 
+@router.post("/nav/refresh-all", response_model=SuccessResponse, summary="批量刷新所有基金净值")
+async def refresh_all_funds_nav(
+    db: Session = Depends(get_db)
+):
+    """批量刷新所有活跃基金的净值数据"""
+    try:
+        service = PublicFundService(db)
+
+        # 获取所有活跃基金
+        funds, total = service.get_fund_list(is_active=True, page=1, page_size=10000)
+
+        if not funds:
+            return SuccessResponse(
+                success=True,
+                message="没有需要刷新的基金"
+            )
+
+        # 批量刷新净值
+        success_count = 0
+        failed_count = 0
+        failed_funds = []
+
+        for fund in funds:
+            try:
+                result = service.refresh_fund_nav(fund.fund_code)
+                if result['success']:
+                    success_count += 1
+                else:
+                    failed_count += 1
+                    failed_funds.append({
+                        'fund_code': fund.fund_code,
+                        'fund_name': fund.fund_name,
+                        'error': result['message']
+                    })
+            except Exception as e:
+                failed_count += 1
+                failed_funds.append({
+                    'fund_code': fund.fund_code,
+                    'fund_name': fund.fund_name,
+                    'error': str(e)
+                })
+
+        message = f"批量刷新完成：成功 {success_count} 个，失败 {failed_count} 个"
+
+        return SuccessResponse(
+            success=True,
+            message=message,
+            data={
+                'total': total,
+                'success_count': success_count,
+                'failed_count': failed_count,
+                'failed_funds': failed_funds
+            }
+        )
+
+    except Exception as e:
+        logger.error(f"批量刷新净值失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/nav/{fund_code}", response_model=PublicFundNavListResponse, summary="获取基金净值")
 async def get_nav_list(
     fund_code: str,

@@ -22,6 +22,7 @@ class Fund(Base):
     fund_code = Column(String(20), primary_key=True, comment='基金代码，如L03126')
     fund_name = Column(String(100), nullable=False, comment='基金全名')
     short_name = Column(String(100), comment='基金简称，去除前缀和后缀')
+    product_features = Column(String(200), comment='产品特征，如：股票多头、量化对冲等')
     noah_product_id = Column(String(50), comment='诺亚CRM系统产品ID，用于净值抓取')
     created_at = Column(DateTime, server_default=func.now(), comment='创建时间')
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), comment='更新时间')
@@ -578,6 +579,28 @@ class IndexDaily(Base):
         return f"<IndexDaily(ts_code='{self.ts_code}', date='{self.trade_date}', close={self.close})>"
 
 
+
+class BacktestPortfolio(Base):
+    """
+    回测组合配置表 - 保存用户创建的回测组合配置
+    """
+    __tablename__ = 'backtest_portfolio'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    portfolio_name = Column(String(100), nullable=False, comment='组合名称')
+    portfolio_config = Column(Text, nullable=False, comment='组合配置（JSON格式，包含产品列表和权重）')
+    initial_capital = Column(Numeric(16, 2), comment='初始资金（万元）')
+    weight_mode = Column(String(20), default='weight', comment='配置模式：weight或amount')
+    rebalance_frequency = Column(String(20), default='quarterly', comment='调仓频率')
+    reinvest_dividend = Column(Boolean, default=True, comment='是否分红再投资')
+    consider_fees = Column(Boolean, default=True, comment='是否考虑费用')
+    created_at = Column(DateTime, server_default=func.now(), comment='创建时间')
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), comment='更新时间')
+
+    def __repr__(self):
+        return f"<BacktestPortfolio(id={self.id}, name='{self.portfolio_name}')>"
+
+
 class WeeklyExcessCache(Base):
     """
     周度超额缓存表 - 存储量化产品的周度累计超额数据
@@ -601,6 +624,27 @@ class WeeklyExcessCache(Base):
         return f"<WeeklyExcessCache(fund='{self.fund_code}', index='{self.tracking_index}', period='{self.start_date} ~ {self.end_date}')>"
 
 
+class PerformancePKRecord(Base):
+    """
+    业绩PK保存记录表 - 存储用户保存的业绩对比配置和结果
+    """
+    __tablename__ = 'performance_pk_record'
+
+    id = Column(Integer, primary_key=True, autoincrement=True, comment='主键ID')
+    title = Column(String(200), nullable=False, comment='PK标题')
+    compare_type = Column(String(20), nullable=False, comment='对比类型：product或portfolio')
+    objects = Column(Text, nullable=False, comment='对比对象列表（JSON格式）')
+    time_range = Column(String(20), comment='时间范围：1m/3m/6m/1y/3y/5y/since/custom')
+    custom_range = Column(Text, comment='自定义时间范围（JSON格式，存储[start_date, end_date]）')
+    benchmark = Column(String(20), comment='基准指数代码')
+    align_mode = Column(String(20), comment='对齐模式：common或respective')
+    created_at = Column(DateTime, nullable=False, default=func.now(), comment='创建时间')
+    updated_at = Column(DateTime, nullable=False, default=func.now(), onupdate=func.now(), comment='更新时间')
+
+    def __repr__(self):
+        return f"<PerformancePKRecord(id={self.id}, title='{self.title}', created_at='{self.created_at}')>"
+
+
 # 数据库表创建顺序（考虑外键依赖）
 TABLES_CREATION_ORDER = [
     Fund,                   # 基金主表（无外键依赖）
@@ -616,5 +660,7 @@ TABLES_CREATION_ORDER = [
     ProjectHoldingIndustry, # 项目持仓行业表（无外键依赖）
     IndexMeta,              # 指数元数据表（记录更新状态，无外键依赖）
     IndexDaily,             # 指数日行情表（Tushare数据，无外键依赖）
+    BacktestPortfolio,      # 回测组合配置表（无外键依赖）
     WeeklyExcessCache,      # 周度超额缓存表（无外键依赖，性能优化用）
+    PerformancePKRecord,    # 业绩PK保存记录表（无外键依赖）
 ]

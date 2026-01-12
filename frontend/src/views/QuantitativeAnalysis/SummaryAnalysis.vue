@@ -358,7 +358,7 @@ const formatDateRange = (startDate, endDate) => {
 const groupByProductType = (data) => {
   const groups = {}
   const groupTrackingIndex = {} // 存储每个组别的跟踪指数
-  const typeOrder = ['300指增', '500指增', 'A500指增', '1000指增', '量化选股', '其他']
+  const typeOrder = ['300指增', '500指增', 'A500指增', '1000指增', '小市值', '量化选股', '其他']
 
   data.forEach(item => {
     const type = item.productType || '其他'

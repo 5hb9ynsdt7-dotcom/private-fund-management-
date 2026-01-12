@@ -3,10 +3,16 @@
     <!-- 页面头部 -->
     <div class="page-header">
       <h2 class="page-title">公募基金库</h2>
-      <el-button type="primary" @click="showAddDialog = true">
-        <el-icon><Plus /></el-icon>
-        添加基金
-      </el-button>
+      <div class="header-actions">
+        <el-button type="success" @click="handleRefreshAllNav" :loading="refreshingAll">
+          <el-icon><Refresh /></el-icon>
+          批量刷新净值
+        </el-button>
+        <el-button type="primary" @click="showAddDialog = true">
+          <el-icon><Plus /></el-icon>
+          添加基金
+        </el-button>
+      </div>
     </div>
 
     <!-- 搜索筛选栏 -->
@@ -151,7 +157,7 @@
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Search } from '@element-plus/icons-vue'
+import { Plus, Search, Refresh } from '@element-plus/icons-vue'
 import publicFundAPI from '@/api/publicFund'
 
 const router = useRouter()
@@ -171,6 +177,7 @@ const pagination = reactive({
 // 基金列表
 const fundList = ref([])
 const loading = ref(false)
+const refreshingAll = ref(false)
 
 // 添加基金对话框
 const showAddDialog = ref(false)
@@ -241,6 +248,46 @@ const handleRefreshNav = async (row) => {
   } finally {
     row._refreshing = false
   }
+}
+
+// 批量刷新所有净值
+const handleRefreshAllNav = async () => {
+  ElMessageBox.confirm(
+    '确定要刷新所有基金的净值吗？这可能需要一些时间。',
+    '批量刷新确认',
+    {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      type: 'warning'
+    }
+  )
+    .then(async () => {
+      refreshingAll.value = true
+      try {
+        const response = await publicFundAPI.refreshAllNav()
+        if (response.success) {
+          const data = response.data || {}
+          const successCount = data.success_count || 0
+          const failedCount = data.failed_count || 0
+
+          if (failedCount > 0) {
+            ElMessage.warning(`${response.message}`)
+          } else {
+            ElMessage.success(`批量刷新成功！共刷新 ${successCount} 个基金净值`)
+          }
+
+          // 刷新列表
+          await loadFundList()
+        } else {
+          ElMessage.error(response.message || '批量刷新失败')
+        }
+      } catch (error) {
+        ElMessage.error('批量刷新失败：' + (error.message || '未知错误'))
+      } finally {
+        refreshingAll.value = false
+      }
+    })
+    .catch(() => {})
 }
 
 // 分页变化
@@ -351,6 +398,11 @@ onMounted(() => {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 20px;
+}
+
+.header-actions {
+  display: flex;
+  gap: 10px;
 }
 
 .page-title {
