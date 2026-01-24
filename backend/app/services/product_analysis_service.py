@@ -332,18 +332,27 @@ class ProductAnalysisService:
                     else:
                         year_win_rate = 0
 
-                    # 计算年度总收益 = (本年末净值 - 去年12月末净值) / 去年12月末净值
-                    # 和组合回测页面逻辑一致
+                    # 计算年度总收益：优先使用年末对比法，如果数据不全则加总月度收益
                     year_end_ym = f"{year}-12"
                     prev_year_end_ym = f"{year-1}-12"
 
                     if year_end_ym in month_end_nav_dict and prev_year_end_ym in month_end_nav_dict:
+                        # 方法1：如果有完整的12月数据，使用年末对比法（更准确）
                         year_end_nav = month_end_nav_dict[year_end_ym]
                         prev_year_end_nav = month_end_nav_dict[prev_year_end_ym]
                         year_total_return = round((year_end_nav / prev_year_end_nav - 1) * 100, 2)
                     else:
-                        # 如果没有去年12月的数据，无法计算准确的年度收益
-                        year_total_return = None
+                        # 方法2：如果没有完整的12月数据，加总该年所有可用月份的收益率
+                        # 使用复利公式：(1+r1)*(1+r2)*...*(1+rn) - 1
+                        year_returns = [monthly_returns[f'month_{i}'] for i in range(1, 13) if monthly_returns[f'month_{i}'] is not None]
+                        if year_returns:
+                            # 将百分比转换为小数，计算复利
+                            cumulative_factor = 1.0
+                            for r in year_returns:
+                                cumulative_factor *= (1 + r / 100)
+                            year_total_return = round((cumulative_factor - 1) * 100, 2)
+                        else:
+                            year_total_return = None
 
                     yearly_monthly_table.append({
                         'year': int(year),

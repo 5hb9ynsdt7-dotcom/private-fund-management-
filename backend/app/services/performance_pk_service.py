@@ -71,7 +71,7 @@ class PerformancePKService:
                     # 组合
                     nav_df = self._get_portfolio_nav(int(obj_id))
                     portfolio = self.db.query(BacktestPortfolio).filter(BacktestPortfolio.id == int(obj_id)).first()
-                    name = portfolio.name if portfolio else obj_id
+                    name = portfolio.portfolio_name if portfolio else obj_id
                 else:
                     logger.warning(f"未知的对象类型: {obj_type}")
                     continue
@@ -202,14 +202,23 @@ class PerformancePKService:
             return None
 
     def _get_portfolio_nav(self, portfolio_id: int) -> Optional[pd.DataFrame]:
-        """获取组合净值数据"""
+        """获取组合净值数据 - 从保存的回测结果中读取"""
         try:
             portfolio = self.db.query(BacktestPortfolio).filter(BacktestPortfolio.id == portfolio_id).first()
-            if not portfolio or not portfolio.backtest_result:
+            if not portfolio:
+                logger.warning(f"组合 {portfolio_id} 不存在")
                 return None
 
-            result = portfolio.backtest_result
+            if not portfolio.backtest_result:
+                logger.warning(f"组合 {portfolio_id} 没有回测结果，请先保存组合或运行回测")
+                return None
+
+            # 解析回测结果
+            import json
+            result = json.loads(portfolio.backtest_result)
+
             if 'nav_curve' not in result:
+                logger.warning(f"组合 {portfolio_id} 回测结果中没有净值曲线数据")
                 return None
 
             nav_curve = result['nav_curve']
@@ -235,6 +244,7 @@ class PerformancePKService:
             benchmark_map = {
                 '000300': '000300.SH',  # 沪深300
                 '000905': '000905.SH',  # 中证500
+                '000852': '000852.SH',  # 中证1000
                 '000001': '000001.SH',  # 上证指数
                 '399006': '399006.SZ',  # 创业板指
             }
@@ -248,6 +258,7 @@ class PerformancePKService:
             secid_map = {
                 '000300.SH': '1.000300',
                 '000905.SH': '0.399905',
+                '000852.SH': '1.000852',
                 '000001.SH': '1.000001',
                 '399006.SZ': '0.399006',
             }
@@ -390,9 +401,26 @@ class PerformancePKService:
                 common_start = max([df['date'].min() for df in nav_data_list])
                 common_end = min([df['date'].max() for df in nav_data_list])
 
+            # 验证共同区间是否有效
+            if common_start > common_end:
+                # 没有共同区间，记录详细信息
+                date_ranges = []
+                for i, df in enumerate(nav_data_list):
+                    date_ranges.append(f"{object_names[i]}: {df['date'].min().strftime('%Y-%m-%d')} 至 {df['date'].max().strftime('%Y-%m-%d')}")
+
+                error_msg = f"所选产品在指定时间范围内没有共同的数据区间。\n"
+                error_msg += f"自定义时间范围: {filter_start_date.strftime('%Y-%m-%d') if filter_start_date else '不限'} 至 {filter_end_date.strftime('%Y-%m-%d') if filter_end_date else '不限'}\n"
+                error_msg += "各产品数据范围:\n" + "\n".join(date_ranges)
+                error_msg += "\n\n建议：请调整时间范围或切换到「按各自成立以来分别展示」模式。"
+
+                logger.error(error_msg)
+                raise ValueError(error_msg)
+
             # 所有产品都过滤到共同区间
             for df in nav_data_list:
                 filtered_df = df[(df['date'] >= common_start) & (df['date'] <= common_end)].copy()
+                if filtered_df.empty:
+                    logger.warning(f"产品在共同区间 {common_start} 至 {common_end} 内无数据")
                 aligned_nav_list.append(filtered_df)
         else:
             # 各自区间模式：每个产品保持自己的时间范围
@@ -510,9 +538,23 @@ class PerformancePKService:
             return_5y = None
 
         # 今年以来收益
+        # 判断是否为今年成立的产品
         year_start = pd.Timestamp(end_date.year, 1, 1)
-        ytd_df = full_nav_df[full_nav_df['date'] >= year_start]
-        ytd_return = ((ytd_df['nav'].iloc[-1] / ytd_df['nav'].iloc[0]) - 1) * 100 if len(ytd_df) > 0 else None
+        is_founded_this_year = full_nav_df['date'].min() >= year_start
+
+        if is_founded_this_year:
+            # 今年成立的产品：使用成立净值作为基准
+            ytd_df = full_nav_df.copy()
+            ytd_return = ((ytd_df['nav'].iloc[-1] / ytd_df['nav'].iloc[0]) - 1) * 100 if len(ytd_df) > 0 else None
+        else:
+            # 去年或更早成立的产品：使用上年最后一个交易日的净值（12月31日或之前最近的交易日）
+            last_year_df = full_nav_df[full_nav_df['date'] < year_start]
+            if len(last_year_df) > 0:
+                last_year_nav = last_year_df['nav'].iloc[-1]  # 上年最后一个交易日的净值
+                current_nav = full_nav_df['nav'].iloc[-1]  # 最新净值
+                ytd_return = ((current_nav / last_year_nav) - 1) * 100
+            else:
+                ytd_return = None
 
         # === 风险收益指标（成立以来）===
         # 累计收益
@@ -609,29 +651,31 @@ class PerformancePKService:
                 else:
                     monthly_returns[f'm{month}'] = None
 
-            # 计算该年度的年度收益（本年12月末 / 去年12月末 - 1）
-            year_end_ym = f"{year}-12"
+            # 计算该年度的年度收益
+            # 优先使用：本年最后一个月末净值 / 去年12月末净值 - 1
             prev_year_end_ym = f"{year-1}-12"
 
-            if year_end_ym in month_end_nav_dict and prev_year_end_ym in month_end_nav_dict:
-                year_end_nav = month_end_nav_dict[year_end_ym]
-                prev_year_end_nav = month_end_nav_dict[prev_year_end_ym]
-                year_total_return = round((year_end_nav / prev_year_end_nav - 1) * 100, 2)
-            else:
-                # 如果没有去年12月的数据，使用该年有数据的第一个月作为起点
-                year_months = year_data['year_month'].sort_values()
-                if len(year_months) > 0:
+            # 找到该年最后一个有数据的月份
+            year_months = year_data['year_month'].sort_values()
+            if len(year_months) > 0:
+                last_month_ym = str(year_months.iloc[-1])
+
+                # 如果有去年12月的数据，使用去年12月作为基准
+                if prev_year_end_ym in month_end_nav_dict and last_month_ym in month_end_nav_dict:
+                    prev_year_end_nav = month_end_nav_dict[prev_year_end_ym]
+                    last_nav = month_end_nav_dict[last_month_ym]
+                    year_total_return = round((last_nav / prev_year_end_nav - 1) * 100, 2)
+                else:
+                    # 如果没有去年12月的数据（说明是成立第一年），使用该年第一个月作为起点
                     first_month_ym = str(year_months.iloc[0])
-                    last_month_ym = str(year_months.iloc[-1])
                     if first_month_ym in month_end_nav_dict and last_month_ym in month_end_nav_dict:
-                        # 计算年内收益
                         first_nav = month_end_nav_dict[first_month_ym]
                         last_nav = month_end_nav_dict[last_month_ym]
                         year_total_return = round((last_nav / first_nav - 1) * 100, 2)
                     else:
                         year_total_return = None
-                else:
-                    year_total_return = None
+            else:
+                year_total_return = None
 
             # 计算月度胜率
             valid_months = [v for v in monthly_returns.values() if v is not None]

@@ -535,3 +535,120 @@ async def download_nav_template():
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"生成模板文件失败: {str(e)}"
         )
+
+
+@router.get("/fund/{fund_code}/with-adjusted-nav", response_model=APIResponse, summary="获取带复权累计净值的基金净值")
+async def get_nav_with_adjusted_accum(
+    fund_code: str,
+    limit: int = Query(10000, ge=1, le=10000, description="返回记录数限制，最大10000条"),
+    db: Session = Depends(get_db)
+):
+    """
+    获取指定基金的净值记录，并计算复权累计净值
+
+    - **fund_code**: 基金代码
+    - **limit**: 返回记录数量，默认10000条
+
+    复权累计净值计算逻辑：
+    1. 从最早的净值开始计算
+    2. 如果遇到分红日，将分红金额加入累计净值计算
+    3. 复权累计净值 = 当前单位净值 + 累计分红总额（考虑再投资）
+    """
+    try:
+        from ..models import Dividend
+
+        nav_service = NavService(db)
+        nav_records = nav_service.get_nav_by_fund(fund_code, limit)
+
+        if not nav_records:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"基金 {fund_code} 没有净值数据"
+            )
+
+        # 获取该基金的所有分红记录
+        dividends = db.query(Dividend).filter(
+            Dividend.fund_code == fund_code
+        ).order_by(Dividend.ex_dividend_date).all()
+
+        # 创建分红字典：{分红日期字符串: (分红金额, 除权前净值)}
+        dividend_dict = {}
+        for div in dividends:
+            if div.ex_dividend_date and div.dividend_per_share:
+                date_str = div.ex_dividend_date.strftime('%Y-%m-%d')
+                dividend_dict[date_str] = {
+                    'dividend_amount': float(div.dividend_per_share),
+                    'pre_dividend_nav': float(div.pre_dividend_nav) if div.pre_dividend_nav else None
+                }
+
+        # 按日期升序排序净值记录（从最早开始）
+        sorted_navs = sorted(nav_records, key=lambda x: x.nav_date)
+
+        # 计算复权累计净值（使用复利链条法）
+        # 公式：F_t = F_{t-1} × (NV_t + D_t) / NV_{t-1}
+        # 其中：NV_t是当日除息后净值，D_t是当日分红
+        adjusted_nav_responses = []
+
+        # 初始化：第一个净值日的复权累计净值等于单位净值
+        prev_adjusted_nav = None
+        prev_unit_nav = None
+
+        for i, nav in enumerate(sorted_navs):
+            nav_date_str = nav.nav_date.strftime('%Y-%m-%d')
+            current_unit_nav = float(nav.unit_nav)
+
+            if i == 0:
+                # 第一个净值日：复权累计净值 = 单位净值
+                adjusted_accum_nav = current_unit_nav
+            else:
+                # 后续净值日：使用复利链条法计算
+                # 检查当前日期是否有分红
+                dividend_amount = 0.0
+                if nav_date_str in dividend_dict:
+                    # 当日有分红
+                    div_info = dividend_dict[nav_date_str]
+                    dividend_amount = div_info['dividend_amount']
+
+                # 计算复权累计净值
+                # F_t = F_{t-1} × (NV_t + D_t) / NV_{t-1}
+                adjusted_accum_nav = prev_adjusted_nav * (current_unit_nav + dividend_amount) / prev_unit_nav
+
+            # 更新前一日的值
+            prev_adjusted_nav = adjusted_accum_nav
+            prev_unit_nav = current_unit_nav
+
+            # 构建响应对象
+            nav_response = NavResponse.from_orm(nav)
+            if nav.fund:
+                nav_response.fund_name = nav.fund.short_name or nav.fund.fund_name
+
+            # 添加复权累计净值字段
+            nav_data = nav_response.dict()
+            nav_data['adjusted_accum_nav'] = round(adjusted_accum_nav, 4)
+
+            adjusted_nav_responses.append(nav_data)
+
+        # 按日期倒序排序返回（最新的在前面）
+        adjusted_nav_responses.reverse()
+
+        return APIResponse(
+            success=True,
+            message=f"获取基金 {fund_code} 带复权累计净值数据成功",
+            data={
+                "fund_code": fund_code,
+                "nav_records": adjusted_nav_responses,
+                "count": len(adjusted_nav_responses),
+                "dividend_count": len(dividends)
+            }
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"获取带复权累计净值失败: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"获取带复权累计净值失败: {str(e)}"
+        )

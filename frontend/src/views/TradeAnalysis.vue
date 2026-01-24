@@ -134,14 +134,20 @@
         </el-col>
         <el-col :span="6">
           <el-date-picker
-            v-model="searchForm.dateRange"
-            type="daterange"
-            range-separator="至"
-            start-placeholder="开始日期"
-            end-placeholder="结束日期"
+            v-model="searchForm.startDate"
+            type="date"
+            placeholder="期初日期"
             format="YYYY-MM-DD"
             value-format="YYYY-MM-DD"
-            style="width: 100%"
+            style="width: 48%; margin-right: 4%"
+          />
+          <el-date-picker
+            v-model="searchForm.endDate"
+            type="date"
+            placeholder="期末日期"
+            format="YYYY-MM-DD"
+            value-format="YYYY-MM-DD"
+            style="width: 48%"
           />
         </el-col>
         <el-col :span="6">
@@ -369,7 +375,8 @@ const statistics = reactive({
 // 搜索表单
 const searchForm = reactive({
   search: '',
-  dateRange: null,
+  startDate: null,
+  endDate: null,
   transactionType: ''
 })
 
@@ -391,9 +398,11 @@ const loadClientData = async () => {
     }
     
     // 添加日期范围参数
-    if (searchForm.dateRange && searchForm.dateRange.length === 2) {
-      params.start_date = searchForm.dateRange[0]
-      params.end_date = searchForm.dateRange[1]
+    if (searchForm.startDate) {
+      params.start_date = searchForm.startDate
+    }
+    if (searchForm.endDate) {
+      params.end_date = searchForm.endDate
     }
     
     const response = await transactionAPI.getTransactionClients(params)
@@ -422,9 +431,11 @@ const loadStatistics = async () => {
     const params = {}
     
     // 添加日期范围参数
-    if (searchForm.dateRange && searchForm.dateRange.length === 2) {
-      params.start_date = searchForm.dateRange[0]
-      params.end_date = searchForm.dateRange[1]
+    if (searchForm.startDate) {
+      params.start_date = searchForm.startDate
+    }
+    if (searchForm.endDate) {
+      params.end_date = searchForm.endDate
     }
     
     const response = await transactionAPI.getTransactionStats(params)
@@ -498,7 +509,8 @@ const handleSearch = () => {
 const resetSearch = () => {
   Object.assign(searchForm, {
     search: '',
-    dateRange: null,
+    startDate: null,
+    endDate: null,
     transactionType: ''
   })
   pagination.page = 1

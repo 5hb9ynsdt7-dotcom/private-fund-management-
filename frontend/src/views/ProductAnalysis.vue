@@ -37,6 +37,22 @@
             />
           </el-select>
         </el-col>
+        <el-col :span="6">
+          <el-select
+            v-model="selectedBenchmark"
+            placeholder="选择对比基准（可选）"
+            clearable
+            style="width: 100%"
+            @change="loadProductAnalysis"
+          >
+            <el-option label="沪深300" value="000300.SH" />
+            <el-option label="中证500" value="000905.SH" />
+            <el-option label="中证1000" value="000852.SH" />
+            <el-option label="中证2000" value="932000.CSI" />
+            <el-option label="中证800" value="000906.SH" />
+            <el-option label="上证指数" value="000001.SH" />
+          </el-select>
+        </el-col>
         <el-col :span="4">
           <el-button type="primary" @click="loadProductAnalysis" :loading="loading">
             <el-icon><Search /></el-icon>
@@ -227,7 +243,7 @@
                 <span v-if="scope.row.month_1 !== null"
                       class="percent-text"
                       :style="`color: ${scope.row.month_1 >= 0 ? '#f56c6c' : '#67c23a'}`">
-                  {{ scope.row.month_1 >= 0 ? '+' : '' }}{{ scope.row.month_1 }}%
+                  {{ scope.row.month_1 >= 0 ? '+' : '' }}{{ Number(scope.row.month_1).toFixed(2) }}%
                 </span>
                 <span v-else style="color: #d1d5db">-</span>
               </template>
@@ -237,7 +253,7 @@
                 <span v-if="scope.row.month_2 !== null"
                       class="percent-text"
                       :style="`color: ${scope.row.month_2 >= 0 ? '#f56c6c' : '#67c23a'}`">
-                  {{ scope.row.month_2 >= 0 ? '+' : '' }}{{ scope.row.month_2 }}%
+                  {{ scope.row.month_2 >= 0 ? '+' : '' }}{{ Number(scope.row.month_2).toFixed(2) }}%
                 </span>
                 <span v-else style="color: #d1d5db">-</span>
               </template>
@@ -247,7 +263,7 @@
                 <span v-if="scope.row.month_3 !== null"
                       class="percent-text"
                       :style="`color: ${scope.row.month_3 >= 0 ? '#f56c6c' : '#67c23a'}`">
-                  {{ scope.row.month_3 >= 0 ? '+' : '' }}{{ scope.row.month_3 }}%
+                  {{ scope.row.month_3 >= 0 ? '+' : '' }}{{ Number(scope.row.month_3).toFixed(2) }}%
                 </span>
                 <span v-else style="color: #d1d5db">-</span>
               </template>
@@ -257,7 +273,7 @@
                 <span v-if="scope.row.month_4 !== null"
                       class="percent-text"
                       :style="`color: ${scope.row.month_4 >= 0 ? '#f56c6c' : '#67c23a'}`">
-                  {{ scope.row.month_4 >= 0 ? '+' : '' }}{{ scope.row.month_4 }}%
+                  {{ scope.row.month_4 >= 0 ? '+' : '' }}{{ Number(scope.row.month_4).toFixed(2) }}%
                 </span>
                 <span v-else style="color: #d1d5db">-</span>
               </template>
@@ -267,7 +283,7 @@
                 <span v-if="scope.row.month_5 !== null"
                       class="percent-text"
                       :style="`color: ${scope.row.month_5 >= 0 ? '#f56c6c' : '#67c23a'}`">
-                  {{ scope.row.month_5 >= 0 ? '+' : '' }}{{ scope.row.month_5 }}%
+                  {{ scope.row.month_5 >= 0 ? '+' : '' }}{{ Number(scope.row.month_5).toFixed(2) }}%
                 </span>
                 <span v-else style="color: #d1d5db">-</span>
               </template>
@@ -277,7 +293,7 @@
                 <span v-if="scope.row.month_6 !== null"
                       class="percent-text"
                       :style="`color: ${scope.row.month_6 >= 0 ? '#f56c6c' : '#67c23a'}`">
-                  {{ scope.row.month_6 >= 0 ? '+' : '' }}{{ scope.row.month_6 }}%
+                  {{ scope.row.month_6 >= 0 ? '+' : '' }}{{ Number(scope.row.month_6).toFixed(2) }}%
                 </span>
                 <span v-else style="color: #d1d5db">-</span>
               </template>
@@ -287,7 +303,7 @@
                 <span v-if="scope.row.month_7 !== null"
                       class="percent-text"
                       :style="`color: ${scope.row.month_7 >= 0 ? '#f56c6c' : '#67c23a'}`">
-                  {{ scope.row.month_7 >= 0 ? '+' : '' }}{{ scope.row.month_7 }}%
+                  {{ scope.row.month_7 >= 0 ? '+' : '' }}{{ Number(scope.row.month_7).toFixed(2) }}%
                 </span>
                 <span v-else style="color: #d1d5db">-</span>
               </template>
@@ -297,7 +313,7 @@
                 <span v-if="scope.row.month_8 !== null"
                       class="percent-text"
                       :style="`color: ${scope.row.month_8 >= 0 ? '#f56c6c' : '#67c23a'}`">
-                  {{ scope.row.month_8 >= 0 ? '+' : '' }}{{ scope.row.month_8 }}%
+                  {{ scope.row.month_8 >= 0 ? '+' : '' }}{{ Number(scope.row.month_8).toFixed(2) }}%
                 </span>
                 <span v-else style="color: #d1d5db">-</span>
               </template>
@@ -307,7 +323,7 @@
                 <span v-if="scope.row.month_9 !== null"
                       class="percent-text"
                       :style="`color: ${scope.row.month_9 >= 0 ? '#f56c6c' : '#67c23a'}`">
-                  {{ scope.row.month_9 >= 0 ? '+' : '' }}{{ scope.row.month_9 }}%
+                  {{ scope.row.month_9 >= 0 ? '+' : '' }}{{ Number(scope.row.month_9).toFixed(2) }}%
                 </span>
                 <span v-else style="color: #d1d5db">-</span>
               </template>
@@ -317,7 +333,7 @@
                 <span v-if="scope.row.month_10 !== null"
                       class="percent-text"
                       :style="`color: ${scope.row.month_10 >= 0 ? '#f56c6c' : '#67c23a'}`">
-                  {{ scope.row.month_10 >= 0 ? '+' : '' }}{{ scope.row.month_10 }}%
+                  {{ scope.row.month_10 >= 0 ? '+' : '' }}{{ Number(scope.row.month_10).toFixed(2) }}%
                 </span>
                 <span v-else style="color: #d1d5db">-</span>
               </template>
@@ -327,7 +343,7 @@
                 <span v-if="scope.row.month_11 !== null"
                       class="percent-text"
                       :style="`color: ${scope.row.month_11 >= 0 ? '#f56c6c' : '#67c23a'}`">
-                  {{ scope.row.month_11 >= 0 ? '+' : '' }}{{ scope.row.month_11 }}%
+                  {{ scope.row.month_11 >= 0 ? '+' : '' }}{{ Number(scope.row.month_11).toFixed(2) }}%
                 </span>
                 <span v-else style="color: #d1d5db">-</span>
               </template>
@@ -337,7 +353,7 @@
                 <span v-if="scope.row.month_12 !== null"
                       class="percent-text"
                       :style="`color: ${scope.row.month_12 >= 0 ? '#f56c6c' : '#67c23a'}`">
-                  {{ scope.row.month_12 >= 0 ? '+' : '' }}{{ scope.row.month_12 }}%
+                  {{ scope.row.month_12 >= 0 ? '+' : '' }}{{ Number(scope.row.month_12).toFixed(2) }}%
                 </span>
                 <span v-else style="color: #d1d5db">-</span>
               </template>
@@ -347,7 +363,7 @@
                 <span v-if="scope.row.year_return !== null && scope.row.year_return !== undefined"
                       class="percent-text"
                       :style="`color: ${scope.row.year_return >= 0 ? '#f56c6c' : '#67c23a'}; font-weight: 600;`">
-                  {{ scope.row.year_return >= 0 ? '+' : '' }}{{ scope.row.year_return }}%
+                  {{ scope.row.year_return >= 0 ? '+' : '' }}{{ Number(scope.row.year_return).toFixed(2) }}%
                 </span>
                 <span v-else style="color: #C0C4CC;">-</span>
               </template>
@@ -355,7 +371,7 @@
             <el-table-column label="胜率" align="center" fixed="right">
               <template #default="scope">
                 <span class="percent-text" style="color: #409eff; font-weight: 600;">
-                  {{ scope.row.win_rate }}%
+                  {{ Number(scope.row.win_rate).toFixed(2) }}%
                 </span>
               </template>
             </el-table-column>
@@ -635,19 +651,32 @@ import axios from 'axios'
 import { ElMessage, ElLoading } from 'element-plus'
 import * as echarts from 'echarts'
 import html2canvas from 'html2canvas'
+import { fetchMultipleBenchmarks } from '@/utils/benchmarkData'
 
 const API_BASE = import.meta.env.PROD ? '' : 'http://localhost:8000'
 
 const loading = ref(false)
 const downloadLoading = ref(false)
 const selectedFundCode = ref('')
+const selectedBenchmark = ref('')
 const fundList = ref([])
 const analysisData = ref(null)
+const benchmarkData = ref(null)
 const navChartRef = ref(null)
 const monthlyReturnChartRef = ref(null)
 const exportContentRef = ref(null)  // 用于图片导出的内容区域
 let navChart = null
 let monthlyReturnChart = null
+
+// 指数名称映射
+const indexNameMap = {
+  '000300.SH': '沪深300',
+  '000905.SH': '中证500',
+  '000852.SH': '中证1000',
+  '932000.CSI': '中证2000',
+  '000906.SH': '中证800',
+  '000001.SH': '上证指数'
+}
 
 onMounted(() => {
   loadFundList()
@@ -683,6 +712,14 @@ const loadProductAnalysis = async () => {
     const response = await axios.get(`${API_BASE}/api/product-analysis/${selectedFundCode.value}`)
     analysisData.value = response.data.data
 
+    // 如果选择了基准，获取基准数据
+    if (selectedBenchmark.value) {
+      const indexDataMap = await fetchMultipleBenchmarks([selectedBenchmark.value])
+      benchmarkData.value = indexDataMap[selectedBenchmark.value] || []
+    } else {
+      benchmarkData.value = null
+    }
+
     await nextTick()
     renderNavChart()
     renderMonthlyReturnChart()
@@ -704,15 +741,36 @@ const renderNavChart = () => {
 
   navChart = echarts.init(navChartRef.value)
 
+  // 准备图例数据
+  const legendData = ['净值', '回撤']
+
+  // 如果有基准数据，添加到图例
+  if (benchmarkData.value && benchmarkData.value.length > 0) {
+    const benchmarkName = indexNameMap[selectedBenchmark.value] || selectedBenchmark.value
+    legendData.splice(1, 0, benchmarkName + '(归一)')
+  }
+
   const option = {
     tooltip: {
       trigger: 'axis',
       axisPointer: {
         type: 'cross'
+      },
+      formatter: (params) => {
+        let result = `<div style="margin-bottom: 5px; font-weight: 600;">${params[0].axisValue}</div>`
+        params.forEach(param => {
+          if (param.value !== null && param.value !== undefined) {
+            const value = Number(param.value).toFixed(2)
+            // 如果是回撤数据，添加%符号
+            const suffix = param.seriesName === '回撤' ? '%' : ''
+            result += `<div>${param.marker} ${param.seriesName}: <span style="font-weight: 600;">${value}${suffix}</span></div>`
+          }
+        })
+        return result
       }
     },
     legend: {
-      data: ['净值', '回撤']
+      data: legendData
     },
     grid: [
       {
@@ -762,6 +820,7 @@ const renderNavChart = () => {
         name: '回撤(%)',
         gridIndex: 1,
         max: 0,
+        nameGap: 35,
         axisLabel: {
           formatter: '{value}%'
         }
@@ -800,6 +859,64 @@ const renderNavChart = () => {
         }
       }
     ]
+  }
+
+  // 如果有基准数据，添加基准曲线（归一化）
+  if (benchmarkData.value && benchmarkData.value.length > 0) {
+    const benchmarkName = indexNameMap[selectedBenchmark.value] || selectedBenchmark.value
+
+    // 创建日期到基准值的映射
+    const benchmarkMap = {}
+    benchmarkData.value.forEach(item => {
+      benchmarkMap[item.date] = item.value
+    })
+
+    // 获取产品净值的日期和值
+    const productDates = analysisData.value.nav_curve.dates
+    const productNavs = analysisData.value.nav_curve.values
+
+    // 找到第一个有基准数据的日期
+    let firstDate = null
+    let firstBenchmarkValue = null
+    let firstProductNav = null
+
+    for (let i = 0; i < productDates.length; i++) {
+      if (benchmarkMap[productDates[i]]) {
+        firstDate = productDates[i]
+        firstBenchmarkValue = benchmarkMap[productDates[i]]
+        firstProductNav = productNavs[i]
+        break
+      }
+    }
+
+    // 如果找到了起点，进行归一化
+    if (firstDate && firstBenchmarkValue && firstProductNav) {
+      const normalizedBenchmark = productDates.map(date => {
+        if (benchmarkMap[date]) {
+          // 归一化：(当前基准值 / 起点基准值) * 起点产品净值
+          return (benchmarkMap[date] / firstBenchmarkValue) * firstProductNav
+        }
+        return null
+      })
+
+      // 添加基准曲线到series
+      option.series.splice(1, 0, {
+        name: benchmarkName + '(归一)',
+        type: 'line',
+        data: normalizedBenchmark,
+        smooth: true,
+        symbol: 'none',
+        xAxisIndex: 0,
+        yAxisIndex: 0,
+        itemStyle: {
+          color: '#E6A23C'
+        },
+        lineStyle: {
+          width: 2,
+          type: 'dashed'
+        }
+      })
+    }
   }
 
   navChart.setOption(option)

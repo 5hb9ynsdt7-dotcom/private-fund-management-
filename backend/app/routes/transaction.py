@@ -731,32 +731,48 @@ async def get_client_transaction_analysis(
                 
                 # 计算份额和金额（根据交易类型判断买入还是卖出）
                 transaction_type = t.transaction_type.lower()
-                
-                if t.confirmed_shares:
+
+                # 特殊处理分红：分为现金分红和红利再投
+                if '分红' in transaction_type:
+                    # 现金分红：确认金额≠0，确认份额=0 → 把现金加回盈亏
+                    if t.confirmed_amount and float(t.confirmed_amount) > 0:
+                        amount = float(t.confirmed_amount)
+                        shares = float(t.confirmed_shares) if t.confirmed_shares else 0
+
+                        if shares == 0:
+                            # 纯现金分红
+                            total_dividend_amount += amount
+                        else:
+                            # 红利再投：确认份额≠0 → 把份额加回持仓份额
+                            total_buy_shares += shares
+                    # 红利再投（只有份额，没有金额）
+                    elif t.confirmed_shares and float(t.confirmed_shares) > 0:
+                        shares = float(t.confirmed_shares)
+                        total_buy_shares += shares
+
+                # 处理其他交易类型
+                elif t.confirmed_shares:
                     shares = float(t.confirmed_shares)
-                    
+
                     # 份额增加的交易类型
                     if any(keyword in transaction_type for keyword in ['申购', '买入', '认购', '认购结果', '增持', '强制调增', '强行调增']):
                         total_buy_shares += shares
                         if first_buy_date is None or t.confirmed_date < first_buy_date:
                             first_buy_date = t.confirmed_date
-                    # 份额减少的交易类型  
+                    # 份额减少的交易类型
                     elif any(keyword in transaction_type for keyword in ['赎回', '卖出', '减持', '强制调减', '强行调减', '强制赎回']):
                         total_sell_shares += shares
-                
-                # 计算金额
-                if t.confirmed_amount:
+
+                # 计算金额（非分红交易）
+                if t.confirmed_amount and '分红' not in transaction_type:
                     amount = float(t.confirmed_amount)
-                    
+
                     # 资金流入（买入）
                     if any(keyword in transaction_type for keyword in ['申购', '买入', '认购', '认购结果', '增持']):
                         total_buy_amount += amount
-                    # 资金流出（赎回）  
+                    # 资金流出（赎回）
                     elif any(keyword in transaction_type for keyword in ['赎回', '卖出', '减持', '强制赎回']):
                         total_sell_amount += amount
-                    # 现金分红（收入）
-                    elif '分红' in transaction_type:
-                        total_dividend_amount += amount
                     # 强制调增/调减和强行调增/调减不涉及资金流动，只调整份额
                 
                 # 更新最后交易日期
@@ -1088,14 +1104,23 @@ async def get_client_monthly_profit_trend(
                 # 计算月初持有份额
                 start_shares = 0
                 for t in product_trans:
-                    if t.confirmed_date < month_start and t.confirmed_shares:
-                        shares = float(t.confirmed_shares)
+                    if t.confirmed_date < month_start:
                         transaction_type = t.transaction_type.lower()
-                        
-                        if any(keyword in transaction_type for keyword in ['申购', '买入', '认购', '认购结果', '增持', '强制调增', '强行调增']):
-                            start_shares += shares
-                        elif any(keyword in transaction_type for keyword in ['赎回', '卖出', '减持', '强制调减', '强行调减', '强制赎回']):
-                            start_shares -= shares
+
+                        # 特殊处理分红
+                        if '分红' in transaction_type:
+                            # 红利再投：确认份额≠0 → 把份额加回持仓份额
+                            if t.confirmed_shares and float(t.confirmed_shares) > 0:
+                                shares = float(t.confirmed_shares)
+                                start_shares += shares
+                            # 现金分红不影响份额
+                        elif t.confirmed_shares:
+                            shares = float(t.confirmed_shares)
+
+                            if any(keyword in transaction_type for keyword in ['申购', '买入', '认购', '认购结果', '增持', '强制调增', '强行调增']):
+                                start_shares += shares
+                            elif any(keyword in transaction_type for keyword in ['赎回', '卖出', '减持', '强制调减', '强行调减', '强制赎回']):
+                                start_shares -= shares
                 
                 start_shares = max(0, start_shares)
                 
@@ -1123,37 +1148,52 @@ async def get_client_monthly_profit_trend(
                 
                 for t in month_transactions:
                     transaction_type = t.transaction_type.lower()
-                    
-                    if t.confirmed_shares:
+
+                    # 特殊处理分红
+                    if '分红' in transaction_type:
+                        # 现金分红：确认金额≠0，确认份额=0
+                        if t.confirmed_amount and float(t.confirmed_amount) > 0:
+                            amount = float(t.confirmed_amount)
+                            shares = float(t.confirmed_shares) if t.confirmed_shares else 0
+
+                            if shares == 0:
+                                # 纯现金分红
+                                dividend_amount += amount
+                            else:
+                                # 红利再投：份额增加
+                                current_shares += shares
+                        # 红利再投（只有份额，没有金额）
+                        elif t.confirmed_shares and float(t.confirmed_shares) > 0:
+                            shares = float(t.confirmed_shares)
+                            current_shares += shares
+
+                    # 处理其他交易类型
+                    elif t.confirmed_shares:
                         shares = float(t.confirmed_shares)
-                        
+
                         # 获取交易日净值
                         trade_nav_record = db.query(Nav).filter(
                             Nav.fund_code == product_code,
                             Nav.nav_date <= t.confirmed_date
                         ).order_by(Nav.nav_date.desc()).first()
-                        
+
                         trade_nav = float(trade_nav_record.unit_nav) if trade_nav_record else None
-                        
+
                         if any(keyword in transaction_type for keyword in ['申购', '买入', '认购', '认购结果', '增持', '强制调增', '强行调增']):
                             # 申购：新增持仓，从申购日开始计算收益
                             current_shares += shares
                             if t.confirmed_amount:
                                 net_cashflow += float(t.confirmed_amount)
-                                
+
                         elif any(keyword in transaction_type for keyword in ['赎回', '卖出', '减持', '强制调减', '强行调减', '强制赎回']):
                             # 赎回：计算被赎回份额从月初到赎回日的收益
                             if trade_nav and start_nav and shares > 0:
                                 redemption_return = shares * (trade_nav - start_nav)
                                 product_return += redemption_return
-                            
+
                             current_shares -= shares
                             if t.confirmed_amount:
                                 net_cashflow -= float(t.confirmed_amount)
-                    
-                    # 计算分红
-                    if '分红' in transaction_type and t.confirmed_amount:
-                        dividend_amount += float(t.confirmed_amount)
                 
                 # 计算剩余持仓的月度收益（月初持仓+月内新增持仓的月末收益）
                 current_shares = max(0, current_shares)
@@ -1486,18 +1526,23 @@ async def get_client_annual_review(
                 # 计算期初持有份额（季度开始前的交易）
                 start_shares = 0
                 for t in product_trans:
-                    if t.confirmed_date < start_date and t.confirmed_shares:
-                        shares = float(t.confirmed_shares)
+                    if t.confirmed_date < start_date:
                         transaction_type = t.transaction_type.lower()
 
-                        if any(keyword in transaction_type for keyword in ['申购', '买入', '认购', '认购结果', '增持', '强制调增', '强行调增']):
-                            start_shares += shares
-                        elif any(keyword in transaction_type for keyword in ['赎回', '卖出', '减持', '强制调减', '强行调减', '强制赎回']):
-                            start_shares -= shares
-                        elif '分红' in transaction_type:
-                            # 红利再投：份额增加，金额为0
-                            if shares > 0 and (not t.confirmed_amount or t.confirmed_amount == 0):
+                        # 特殊处理分红
+                        if '分红' in transaction_type:
+                            # 红利再投：确认份额≠0 → 把份额加回持仓份额
+                            if t.confirmed_shares and float(t.confirmed_shares) > 0:
+                                shares = float(t.confirmed_shares)
                                 start_shares += shares
+                            # 现金分红不影响份额
+                        elif t.confirmed_shares:
+                            shares = float(t.confirmed_shares)
+
+                            if any(keyword in transaction_type for keyword in ['申购', '买入', '认购', '认购结果', '增持', '强制调增', '强行调增']):
+                                start_shares += shares
+                            elif any(keyword in transaction_type for keyword in ['赎回', '卖出', '减持', '强制调减', '强行调减', '强制赎回']):
+                                start_shares -= shares
 
                 # 计算期末持有份额（季度结束前的所有交易）
                 end_shares = 0
@@ -1505,33 +1550,37 @@ async def get_client_annual_review(
                 period_dividend = 0  # 季度内的分红金额
 
                 for t in product_trans:
-                    if t.confirmed_date <= end_date and t.confirmed_shares:
-                        shares = float(t.confirmed_shares)
+                    if t.confirmed_date <= end_date:
                         transaction_type = t.transaction_type.lower()
 
-                        if any(keyword in transaction_type for keyword in ['申购', '买入', '认购', '认购结果', '增持', '强制调增', '强行调增']):
-                            end_shares += shares
-                            # 季度内的申购记为现金流出
-                            if start_date <= t.confirmed_date <= end_date and t.confirmed_amount:
-                                period_cashflow += float(t.confirmed_amount)
-                        elif any(keyword in transaction_type for keyword in ['赎回', '卖出', '减持', '强制调减', '强行调减', '强制赎回']):
-                            end_shares -= shares
-                            # 季度内的赎回记为现金流入
-                            if start_date <= t.confirmed_date <= end_date and t.confirmed_amount:
-                                period_cashflow -= float(t.confirmed_amount)
-                        elif '分红' in transaction_type:
-                            # 处理分红
-                            if start_date <= t.confirmed_date <= end_date:
-                                # 红利再投：份额增加，金额为0
-                                if shares > 0 and (not t.confirmed_amount or t.confirmed_amount == 0):
-                                    end_shares += shares
-                                    # 红利再投不影响现金流，但需要记录分红收益
-                                    # 分红收益 = 分红份额 * 当时净值（近似）
-                                    # 这里暂不计入period_dividend，因为已体现在份额增加中
-                                # 现金分红：金额大于0，份额不变或减少
-                                elif t.confirmed_amount and t.confirmed_amount > 0:
-                                    period_dividend += float(t.confirmed_amount)
-                                    # 现金分红是收益，不影响现金流（因为是收入）
+                        # 特殊处理分红
+                        if '分红' in transaction_type:
+                            # 红利再投：确认份额≠0 → 把份额加回持仓份额
+                            if t.confirmed_shares and float(t.confirmed_shares) > 0:
+                                shares = float(t.confirmed_shares)
+                                end_shares += shares
+                            # 现金分红：确认金额≠0，确认份额=0 → 把现金加回盈亏
+                            if t.confirmed_amount and float(t.confirmed_amount) > 0:
+                                amount = float(t.confirmed_amount)
+                                shares = float(t.confirmed_shares) if t.confirmed_shares else 0
+                                # 只有纯现金分红才计入period_dividend
+                                if shares == 0 and start_date <= t.confirmed_date <= end_date:
+                                    period_dividend += amount
+
+                        # 处理其他交易类型
+                        elif t.confirmed_shares:
+                            shares = float(t.confirmed_shares)
+
+                            if any(keyword in transaction_type for keyword in ['申购', '买入', '认购', '认购结果', '增持', '强制调增', '强行调增']):
+                                end_shares += shares
+                                # 季度内的申购记为现金流出
+                                if start_date <= t.confirmed_date <= end_date and t.confirmed_amount:
+                                    period_cashflow += float(t.confirmed_amount)
+                            elif any(keyword in transaction_type for keyword in ['赎回', '卖出', '减持', '强制调减', '强行调减', '强制赎回']):
+                                end_shares -= shares
+                                # 季度内的赎回记为现金流入
+                                if start_date <= t.confirmed_date <= end_date and t.confirmed_amount:
+                                    period_cashflow -= float(t.confirmed_amount)
 
                 # 获取期初和期末净值
                 start_nav = None

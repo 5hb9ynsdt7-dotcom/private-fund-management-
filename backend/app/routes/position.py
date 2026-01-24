@@ -493,7 +493,8 @@ async def get_client_position_detail(
         positions_query = db.query(Position, Fund, Strategy)\
                            .join(Fund, Position.fund_code == Fund.fund_code)\
                            .outerjoin(Strategy, Fund.fund_code == Strategy.fund_code)\
-                           .filter(Position.group_id == group_id)
+                           .filter(Position.group_id == group_id)\
+                           .filter(Position.shares > 0)
         
         if as_of_date:
             positions_query = positions_query.filter(Position.stock_date <= as_of_date)
@@ -573,10 +574,20 @@ async def get_client_position_detail(
                     # 使用买入日期作为起始日期
                     start_nav_date = first_buy_date if buy_nav else None
                 else:
-                    # 买入时间在阶段开始前，获取开始日净值
-                    start_nav_query = db.query(Nav).filter(
-                        and_(Nav.fund_code == position.fund_code, Nav.nav_date >= start_date)
-                    ).order_by(Nav.nav_date)
+                    # 买入时间在阶段开始前，获取期初净值
+                    # 如果开始日期是1月1日，则获取上一年12月31日的净值，避免年初分红导致的净值下降
+                    if start_date.month == 1 and start_date.day == 1:
+                        # 获取上一年12月31日或之前的最后一个净值
+                        year_end_last_year = start_date - timedelta(days=1)
+                        start_nav_query = db.query(Nav).filter(
+                            and_(Nav.fund_code == position.fund_code, Nav.nav_date <= year_end_last_year)
+                        ).order_by(desc(Nav.nav_date))
+                    else:
+                        # 其他日期，获取 >= 开始日期的第一个净值
+                        start_nav_query = db.query(Nav).filter(
+                            and_(Nav.fund_code == position.fund_code, Nav.nav_date >= start_date)
+                        ).order_by(Nav.nav_date)
+
                     start_nav_record = start_nav_query.first()
                     period_start_nav = start_nav_record.unit_nav if start_nav_record else None
                     start_nav_date = start_nav_record.nav_date if start_nav_record else None
@@ -692,10 +703,9 @@ async def get_client_position_detail(
         year_start = date(current_year, 1, 1)
         
         # 获取今年的最新日期作为结束日期
-        latest_date = max((position.stock_date for position, fund, strategy in position_data), default=None)
-        if not latest_date:
-            latest_date = date.today()
-        
+        # 今年以来收益应该使用当前日期，而不是持仓快照日期
+        latest_date = date.today()
+
         for position, fund, strategy in position_data:
             if not position.shares:
                 continue
@@ -711,13 +721,14 @@ async def get_client_position_detail(
                 else:
                     continue  # 无法计算买入净值，跳过
             else:
-                # 买入时间在今年开始前，获取1月1日净值
+                # 买入时间在今年开始前，获取去年12月31日或之前的最后一个净值作为期初净值
+                year_end_last_year = year_start - timedelta(days=1)  # 去年12月31日
                 start_nav_query = db.query(Nav).filter(
-                    and_(Nav.fund_code == position.fund_code, Nav.nav_date >= year_start)
-                ).order_by(Nav.nav_date)
+                    and_(Nav.fund_code == position.fund_code, Nav.nav_date <= year_end_last_year)
+                ).order_by(desc(Nav.nav_date))
                 start_nav = start_nav_query.first()
                 period_start_nav = start_nav.unit_nav if start_nav else None
-                
+
                 if not period_start_nav:
                     continue  # 没有净值数据，跳过
             

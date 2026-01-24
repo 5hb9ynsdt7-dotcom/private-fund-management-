@@ -100,22 +100,64 @@
             </span>
           </template>
         </el-table-column>
+        <el-table-column label="操作" width="100" align="center" fixed="right">
+          <template #default="{ row }">
+            <el-button
+              type="primary"
+              size="small"
+              text
+              @click="showPositionDetail(row)"
+            >
+              查看明细
+            </el-button>
+          </template>
+        </el-table-column>
       </el-table>
     </el-card>
 
-    <!-- 调仓记录 -->
-    <el-card style="margin-top: 20px;">
-      <template #header><span>调仓记录</span></template>
-      <el-table :data="transactions" border>
+    <!-- 持仓明细对话框 -->
+    <el-dialog
+      v-model="showPositionDetailDialog"
+      :title="`${selectedPosition?.fund_name || ''} - 交易明细`"
+      width="900px"
+    >
+      <div v-if="selectedPosition" style="margin-bottom: 20px;">
+        <el-descriptions :column="3" border>
+          <el-descriptions-item label="持有份额">
+            {{ formatNumber(selectedPosition.shares, 2) }}
+          </el-descriptions-item>
+          <el-descriptions-item label="投入成本">
+            {{ formatMoney(selectedPosition.cost_amount) }}
+          </el-descriptions-item>
+          <el-descriptions-item label="平均成本">
+            {{ formatNumber(selectedPosition.avg_cost_nav, 4) }}
+          </el-descriptions-item>
+          <el-descriptions-item label="当前净值">
+            {{ formatNumber(selectedPosition.current_nav, 4) }}
+          </el-descriptions-item>
+          <el-descriptions-item label="当前市值">
+            {{ formatMoney(selectedPosition.current_value) }}
+          </el-descriptions-item>
+          <el-descriptions-item label="盈亏">
+            <span :style="{ color: getReturnColor(selectedPosition.profit_loss) }">
+              {{ formatMoney(selectedPosition.profit_loss) }} ({{ formatPercent(selectedPosition.profit_loss_rate) }})
+            </span>
+          </el-descriptions-item>
+        </el-descriptions>
+      </div>
+
+      <el-table :data="positionTransactions" border max-height="400">
         <el-table-column prop="transaction_date" label="日期" width="120" />
-        <el-table-column prop="transaction_type" label="操作" width="80">
+        <el-table-column prop="transaction_type" label="操作" width="100">
           <template #default="{ row }">
-            <el-tag :type="row.transaction_type === 'buy' ? 'danger' : 'success'" size="small">
-              {{ row.transaction_type === 'buy' ? '买入' : '卖出' }}
+            <el-tag
+              :type="getTransactionTypeTag(row.transaction_type)"
+              size="small"
+            >
+              {{ getTransactionTypeName(row.transaction_type) }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="fund_name" label="基金" min-width="200" />
         <el-table-column prop="amount" label="金额" width="120" align="right">
           <template #default="{ row }">{{ formatMoney(row.amount) }}</template>
         </el-table-column>
@@ -139,7 +181,7 @@
           </template>
         </el-table-column>
       </el-table>
-    </el-card>
+    </el-dialog>
 
     <!-- 添加交易对话框 -->
     <el-dialog v-model="showTransactionDialog" title="添加交易" width="600px" @open="loadFundList">
@@ -157,6 +199,8 @@
           <el-radio-group v-model="transactionForm.transaction_type">
             <el-radio label="buy">买入</el-radio>
             <el-radio label="sell">卖出</el-radio>
+            <el-radio label="cash_dividend">现金分红</el-radio>
+            <el-radio label="reinvest_dividend">红利再投</el-radio>
           </el-radio-group>
         </el-form-item>
 
@@ -186,7 +230,12 @@
           />
         </el-form-item>
 
-        <el-form-item label="交易金额" required>
+        <!-- 买入/卖出/现金分红：显示金额输入 -->
+        <el-form-item
+          v-if="transactionForm.transaction_type !== 'reinvest_dividend'"
+          label="交易金额"
+          required
+        >
           <el-input-number
             v-model="transactionForm.amount"
             :min="0"
@@ -195,7 +244,31 @@
             placeholder="请输入交易金额"
             style="width: 100%"
           />
-          <span style="color: #909399; font-size: 12px;">系统将自动根据净值计算份额</span>
+          <span v-if="transactionForm.transaction_type === 'buy' || transactionForm.transaction_type === 'sell'" style="color: #909399; font-size: 12px;">
+            系统将自动根据净值计算份额
+          </span>
+          <span v-else-if="transactionForm.transaction_type === 'cash_dividend'" style="color: #909399; font-size: 12px;">
+            现金分红金额将减少投入成本，增加盈亏
+          </span>
+        </el-form-item>
+
+        <!-- 红利再投：显示份额输入 -->
+        <el-form-item
+          v-if="transactionForm.transaction_type === 'reinvest_dividend'"
+          label="分红份额"
+          required
+        >
+          <el-input-number
+            v-model="transactionForm.shares"
+            :min="0"
+            :precision="2"
+            :controls="false"
+            placeholder="请输入红利再投份额"
+            style="width: 100%"
+          />
+          <span style="color: #909399; font-size: 12px;">
+            红利再投份额将增加持仓，不改变成本
+          </span>
         </el-form-item>
 
         <el-form-item label="手续费">
@@ -250,9 +323,15 @@ const transactionForm = ref({
   fund_code: '',
   transaction_date: new Date().toISOString().split('T')[0],
   amount: 0,
+  shares: 0,
   fee: 0,
   note: ''
 })
+
+// 持仓明细对话框
+const showPositionDetailDialog = ref(false)
+const selectedPosition = ref(null)
+const positionTransactions = ref([])
 
 const chartRef = ref()
 let chartInstance = null
@@ -335,9 +414,19 @@ const handleAddTransaction = async () => {
     return
   }
 
-  if (!transactionForm.value.amount || transactionForm.value.amount <= 0) {
-    ElMessage.warning('请输入有效的交易金额')
-    return
+  // 根据交易类型验证必填字段
+  if (transactionForm.value.transaction_type === 'reinvest_dividend') {
+    // 红利再投：验证份额
+    if (!transactionForm.value.shares || transactionForm.value.shares <= 0) {
+      ElMessage.warning('请输入有效的分红份额')
+      return
+    }
+  } else {
+    // 买入/卖出/现金分红：验证金额
+    if (!transactionForm.value.amount || transactionForm.value.amount <= 0) {
+      ElMessage.warning('请输入有效的交易金额')
+      return
+    }
   }
 
   addingTransaction.value = true
@@ -352,6 +441,7 @@ const handleAddTransaction = async () => {
       fund_code: '',
       transaction_date: new Date().toISOString().split('T')[0],
       amount: 0,
+      shares: 0,
       fee: 0,
       note: ''
     }
@@ -384,12 +474,29 @@ const handleDeleteTransaction = async (transaction) => {
 
     // 重新加载数据
     await loadPortfolioDetail()
+
+    // 如果明细对话框打开，更新明细数据
+    if (showPositionDetailDialog.value && selectedPosition.value) {
+      positionTransactions.value = transactions.value.filter(
+        t => t.fund_code === selectedPosition.value.fund_code
+      )
+    }
   } catch (error) {
     if (error !== 'cancel') {
       console.error('删除交易失败:', error)
       ElMessage.error(error.response?.data?.detail || '删除交易失败')
     }
   }
+}
+
+// 显示持仓明细
+const showPositionDetail = (position) => {
+  selectedPosition.value = position
+  // 筛选该基金的所有交易记录
+  positionTransactions.value = transactions.value.filter(
+    t => t.fund_code === position.fund_code
+  )
+  showPositionDetailDialog.value = true
 }
 
 // 渲染图表
@@ -478,6 +585,28 @@ const renderChart = () => {
   }
 
   chartInstance.setOption(option)
+}
+
+// 获取交易类型名称
+const getTransactionTypeName = (type) => {
+  const typeMap = {
+    'buy': '买入',
+    'sell': '卖出',
+    'cash_dividend': '现金分红',
+    'reinvest_dividend': '红利再投'
+  }
+  return typeMap[type] || type
+}
+
+// 获取交易类型标签颜色
+const getTransactionTypeTag = (type) => {
+  const tagMap = {
+    'buy': 'danger',
+    'sell': 'success',
+    'cash_dividend': 'warning',
+    'reinvest_dividend': 'info'
+  }
+  return tagMap[type] || ''
 }
 
 // 返回列表

@@ -102,23 +102,24 @@ class Nav(Base):
     __tablename__ = 'nav'
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    fund_code = Column(String(20), ForeignKey('fund.fund_code', ondelete='CASCADE'), 
+    fund_code = Column(String(20), ForeignKey('fund.fund_code', ondelete='CASCADE'),
                       nullable=False, comment='关联基金代码')
     nav_date = Column(Date, nullable=False, comment='净值日期')
     unit_nav = Column(Numeric(16, 6), nullable=False, comment='单位净值')
     accum_nav = Column(Numeric(16, 6), nullable=False, comment='累计净值')
-    
+    adjusted_accum_nav = Column(Numeric(16, 6), nullable=True, comment='复权累计净值')
+
     # 建立与基金表的关系
     fund = relationship("Fund", back_populates="nav_records")
-    
+
     # 复合唯一约束：同一基金同一日期只能有一条净值记录
     __table_args__ = (
         UniqueConstraint('fund_code', 'nav_date', name='uk_fund_nav_date'),
     )
-    
+
     def __repr__(self):
         return f"<Nav(fund_code='{self.fund_code}', date='{self.nav_date}', unit_nav={self.unit_nav})>"
-    
+
     @classmethod
     def validate_nav_values(cls, unit_nav: float, accum_nav: float) -> bool:
         """
@@ -312,10 +313,15 @@ class Transaction(Base):
             if not data.get(field):
                 errors.append(f"缺少必填字段: {field}")
         
-        # 集团号格式验证（应为数字）
+        # 集团号格式验证（支持纯数字或字母+数字组合，如：000319506 或 CF100713649）
         group_id = data.get('group_id')
-        if group_id and not str(group_id).strip().isdigit():
-            errors.append("集团号必须为数字")
+        if group_id:
+            group_id_str = str(group_id).strip()
+            # 允许字母、数字的组合，长度不超过20个字符
+            if not group_id_str or len(group_id_str) > 20:
+                errors.append("集团号长度必须在1-20个字符之间")
+            elif not re.match(r'^[A-Za-z0-9]+$', group_id_str):
+                errors.append("集团号只能包含字母和数字")
         
         # 金额字段验证（如果存在）
         numeric_fields = ['confirmed_shares', 'confirmed_amount', 'transaction_fee']
@@ -594,6 +600,7 @@ class BacktestPortfolio(Base):
     rebalance_frequency = Column(String(20), default='quarterly', comment='调仓频率')
     reinvest_dividend = Column(Boolean, default=True, comment='是否分红再投资')
     consider_fees = Column(Boolean, default=True, comment='是否考虑费用')
+    backtest_result = Column(Text, comment='最近一次回测结果（JSON格式）')
     created_at = Column(DateTime, server_default=func.now(), comment='创建时间')
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), comment='更新时间')
 
@@ -645,6 +652,50 @@ class PerformancePKRecord(Base):
         return f"<PerformancePKRecord(id={self.id}, title='{self.title}', created_at='{self.created_at}')>"
 
 
+class ProductList(Base):
+    """
+    产品清单表 - 存储用户自定义的产品清单
+    """
+    __tablename__ = 'product_list'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(100), nullable=False, comment='清单名称')
+    description = Column(String(500), comment='清单描述')
+    created_at = Column(DateTime, server_default=func.now(), comment='创建时间')
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), comment='更新时间')
+
+    # 关联产品清单项
+    items = relationship("ProductListItem", back_populates="product_list", cascade="all, delete-orphan")
+
+    def __repr__(self):
+        return f"<ProductList(id={self.id}, name='{self.name}')>"
+
+
+class ProductListItem(Base):
+    """
+    产品清单项表 - 存储清单中的具体产品
+    """
+    __tablename__ = 'product_list_item'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    list_id = Column(Integer, ForeignKey('product_list.id', ondelete='CASCADE'), nullable=False, comment='清单ID')
+    fund_code = Column(String(20), ForeignKey('fund.fund_code', ondelete='CASCADE'), nullable=False, comment='基金代码')
+    sort_order = Column(Integer, default=0, comment='排序顺序')
+    created_at = Column(DateTime, server_default=func.now(), comment='创建时间')
+
+    # 关联
+    product_list = relationship("ProductList", back_populates="items")
+    fund = relationship("Fund")
+
+    # 唯一约束：同一清单中不能有重复的产品
+    __table_args__ = (
+        UniqueConstraint('list_id', 'fund_code', name='uk_list_fund'),
+    )
+
+    def __repr__(self):
+        return f"<ProductListItem(id={self.id}, list_id={self.list_id}, fund_code='{self.fund_code}')>"
+
+
 # 数据库表创建顺序（考虑外键依赖）
 TABLES_CREATION_ORDER = [
     Fund,                   # 基金主表（无外键依赖）
@@ -663,4 +714,6 @@ TABLES_CREATION_ORDER = [
     BacktestPortfolio,      # 回测组合配置表（无外键依赖）
     WeeklyExcessCache,      # 周度超额缓存表（无外键依赖，性能优化用）
     PerformancePKRecord,    # 业绩PK保存记录表（无外键依赖）
+    ProductList,            # 产品清单表（无外键依赖）
+    ProductListItem,        # 产品清单项表（依赖ProductList和Fund）
 ]

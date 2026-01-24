@@ -137,7 +137,11 @@ class PortfolioService:
     def add_transaction(self, portfolio_id: int, transaction_data: TransactionCreate) -> PublicFundPortfolioTransaction:
         """
         添加交易记录并更新持仓
-        自动从公募基金净值表获取净值，并计算份额
+        支持四种交易类型：
+        - buy: 买入（需要金额，自动计算份额）
+        - sell: 卖出（需要金额或份额）
+        - cash_dividend: 现金分红（需要金额，增加盈亏）
+        - reinvest_dividend: 红利再投（需要份额，增加持仓）
         """
         try:
             portfolio = self.get_portfolio(portfolio_id)
@@ -148,6 +152,15 @@ class PortfolioService:
             fund = self.db.query(PublicFund).filter(PublicFund.fund_code == transaction_data.fund_code).first()
             if not fund:
                 raise ValueError(f"基金 {transaction_data.fund_code} 不存在，请先在公募基金库中添加该基金")
+
+            # 根据交易类型验证必填字段
+            if transaction_data.transaction_type in ['buy', 'sell', 'cash_dividend']:
+                if not transaction_data.amount or transaction_data.amount == 0:
+                    raise ValueError(f"{transaction_data.transaction_type} 交易必须提供金额")
+
+            if transaction_data.transaction_type == 'reinvest_dividend':
+                if not transaction_data.shares or transaction_data.shares == 0:
+                    raise ValueError("红利再投交易必须提供份额")
 
             # 自动获取交易日期的净值（如果未提供）
             nav_value = transaction_data.nav
@@ -166,15 +179,29 @@ class PortfolioService:
                 nav_value = nav_record.unit_nav
                 logger.info(f"自动获取净值: {transaction_data.fund_code} 日期:{nav_record.nav_date} 净值:{nav_value}")
 
-            # 自动计算份额（如果未提供）
+            # 计算份额和金额
             shares = transaction_data.shares
-            if not shares or shares == 0:
-                if not transaction_data.amount or transaction_data.amount == 0:
-                    raise ValueError("请提供交易金额或交易份额")
+            amount = transaction_data.amount
 
-                # 根据金额和净值计算份额
-                shares = transaction_data.amount / nav_value
-                logger.info(f"自动计算份额: 金额:{transaction_data.amount} / 净值:{nav_value} = {shares}")
+            if transaction_data.transaction_type in ['buy', 'sell']:
+                # 买入/卖出：自动计算份额（如果未提供）
+                if not shares or shares == 0:
+                    if not amount or amount == 0:
+                        raise ValueError("请提供交易金额或交易份额")
+                    shares = amount / nav_value
+                    logger.info(f"自动计算份额: 金额:{amount} / 净值:{nav_value} = {shares}")
+                elif not amount or amount == 0:
+                    # 如果只提供了份额，计算金额
+                    amount = shares * nav_value
+                    logger.info(f"自动计算金额: 份额:{shares} * 净值:{nav_value} = {amount}")
+
+            elif transaction_data.transaction_type == 'cash_dividend':
+                # 现金分红：金额已提供，份额设为0
+                shares = Decimal('0')
+
+            elif transaction_data.transaction_type == 'reinvest_dividend':
+                # 红利再投：份额已提供，金额设为0
+                amount = Decimal('0')
 
             # 创建交易记录
             transaction = PublicFundPortfolioTransaction(
@@ -182,7 +209,7 @@ class PortfolioService:
                 fund_code=transaction_data.fund_code,
                 transaction_type=transaction_data.transaction_type,
                 transaction_date=transaction_data.transaction_date,
-                amount=transaction_data.amount,
+                amount=amount,
                 shares=shares,
                 nav=nav_value,
                 fee=transaction_data.fee or Decimal('0'),
@@ -196,7 +223,7 @@ class PortfolioService:
                 fund_code=transaction_data.fund_code,
                 transaction_type=transaction_data.transaction_type,
                 transaction_date=transaction_data.transaction_date,
-                amount=transaction_data.amount,
+                amount=amount,
                 shares=shares,
                 nav=nav_value,
                 fee=transaction_data.fee,
@@ -204,11 +231,14 @@ class PortfolioService:
             )
             self._update_position(portfolio_id, updated_transaction_data)
 
-            # 更新总投入金额（不使用现金余额概念）
+            # 更新总投入金额
             if transaction_data.transaction_type == 'buy':
                 # 买入：增加总投入
-                portfolio.initial_amount += transaction_data.amount
-            # 卖出不改变总投入
+                portfolio.initial_amount += amount
+            elif transaction_data.transaction_type == 'cash_dividend':
+                # 现金分红：减少总投入（相当于收回部分投资）
+                portfolio.initial_amount -= amount
+            # 卖出和红利再投不改变总投入
 
             self.db.commit()
             self.db.refresh(transaction)
@@ -267,6 +297,20 @@ class PortfolioService:
             else:
                 position.avg_cost_nav = None
 
+        elif transaction.transaction_type == 'cash_dividend':
+            # 现金分红：不改变份额，减少成本（相当于收回部分投资）
+            position.cost_amount -= transaction.amount
+            # 更新平均成本净值
+            if position.shares > 0:
+                position.avg_cost_nav = position.cost_amount / position.shares
+
+        elif transaction.transaction_type == 'reinvest_dividend':
+            # 红利再投：增加份额，不改变成本（分红转为份额）
+            position.shares += transaction.shares
+            # 更新平均成本净值
+            if position.shares > 0:
+                position.avg_cost_nav = position.cost_amount / position.shares
+
     def get_transactions(self, portfolio_id: int, limit: int = 100) -> List[PublicFundPortfolioTransaction]:
         """
         获取交易记录
@@ -307,11 +351,14 @@ class PortfolioService:
             # 回滚持仓
             self._rollback_position(portfolio_id, transaction)
 
-            # 回滚总投入（不使用现金余额概念）
+            # 回滚总投入
             if transaction.transaction_type == 'buy':
                 # 回滚买入：减少总投入
                 portfolio.initial_amount -= transaction.amount
-            # 卖出不改变总投入
+            elif transaction.transaction_type == 'cash_dividend':
+                # 回滚现金分红：增加总投入
+                portfolio.initial_amount += transaction.amount
+            # 卖出和红利再投不改变总投入
 
             # 删除交易记录
             self.db.delete(transaction)
@@ -365,6 +412,22 @@ class PortfolioService:
             # 更新平均成本净值
             if position.shares > 0:
                 position.avg_cost_nav = position.cost_amount / position.shares
+
+        elif transaction.transaction_type == 'cash_dividend':
+            # 回滚现金分红：增加成本
+            position.cost_amount += transaction.amount
+            # 更新平均成本净值
+            if position.shares > 0:
+                position.avg_cost_nav = position.cost_amount / position.shares
+
+        elif transaction.transaction_type == 'reinvest_dividend':
+            # 回滚红利再投：减少份额
+            position.shares -= transaction.shares
+            # 更新平均成本净值
+            if position.shares > 0:
+                position.avg_cost_nav = position.cost_amount / position.shares
+            else:
+                position.avg_cost_nav = None
 
     # ========== 持仓查询 ==========
 

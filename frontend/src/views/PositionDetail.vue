@@ -112,9 +112,9 @@
     </el-row>
     
     <!-- 阶段收益时间段显示 -->
-    <div v-if="periodRange && periodRange.length === 2" class="period-display">
+    <div v-if="periodStart && periodEnd" class="period-display">
       <el-alert
-        :title="`阶段收益时间段：${periodRange[0]} 至 ${periodRange[1]}`"
+        :title="`阶段收益时间段：${periodStart} 至 ${periodEnd}`"
         type="info"
         center
         :closable="false"
@@ -130,17 +130,32 @@
           <div class="table-controls">
             <div class="period-filter">
               <span>阶段收益计算：</span>
+              <el-button
+                size="small"
+                @click="setYTDPeriod"
+                style="margin-right: 8px;"
+              >
+                今年以来
+              </el-button>
               <el-date-picker
-                v-model="periodRange"
-                type="daterange"
-                range-separator="至"
-                start-placeholder="开始日期"
-                end-placeholder="结束日期"
+                v-model="periodStart"
+                type="date"
+                placeholder="期初日期"
                 format="YYYY-MM-DD"
                 value-format="YYYY-MM-DD"
                 @change="handlePeriodChange"
                 size="small"
-                style="width: 240px; margin-right: 12px;"
+                style="width: 115px; margin-right: 4px;"
+              />
+              <el-date-picker
+                v-model="periodEnd"
+                type="date"
+                placeholder="期末日期"
+                format="YYYY-MM-DD"
+                value-format="YYYY-MM-DD"
+                @change="handlePeriodChange"
+                size="small"
+                style="width: 115px; margin-right: 12px;"
               />
             </div>
             <el-select v-model="sortBy" @change="sortTable" size="small">
@@ -345,7 +360,8 @@ const router = useRouter()
 // 响应式数据
 const loading = ref(false)
 const sortBy = ref('strategy')
-const periodRange = ref(null)
+const periodStart = ref(null)
+const periodEnd = ref(null)
 const imageExporting = ref(false)
 const positionData = ref({
   client_info: {},
@@ -384,8 +400,8 @@ const loadPositionDetail = async () => {
   
   loading.value = true
   try {
-    const startDate = periodRange.value ? periodRange.value[0] : null
-    const endDate = periodRange.value ? periodRange.value[1] : null
+    const startDate = periodStart.value
+    const endDate = periodEnd.value
     const response = await positionAPI.getClientPositionDetail(groupId, null, startDate, endDate)
     positionData.value = response
     
@@ -754,6 +770,40 @@ const handlePeriodChange = () => {
   loadPositionDetail()
 }
 
+// 设置今年以来时间范围
+const setYTDPeriod = () => {
+  const today = new Date()
+  const year = today.getFullYear()
+  periodStart.value = `${year}-01-01`
+  periodEnd.value = today.toISOString().split('T')[0]
+  loadPositionDetail()
+}
+
+// 计算上上周五到上周五的日期
+const getLastTwoFridays = () => {
+  const today = new Date()
+  const dayOfWeek = today.getDay() // 0=周日, 5=周五
+
+  // 计算上周五
+  let daysToLastFriday = dayOfWeek === 0 ? 2 : (dayOfWeek + 2) % 7
+  if (daysToLastFriday === 0) daysToLastFriday = 7
+  const lastFriday = new Date(today)
+  lastFriday.setDate(today.getDate() - daysToLastFriday)
+
+  // 计算上上周五（上周五往前推7天）
+  const twoWeeksAgoFriday = new Date(lastFriday)
+  twoWeeksAgoFriday.setDate(lastFriday.getDate() - 7)
+
+  const formatDate = (date) => {
+    const year = date.getFullYear()
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
+  }
+
+  return [formatDate(twoWeeksAgoFriday), formatDate(lastFriday)]
+}
+
 // 刷新数据
 const refreshData = () => {
   loadPositionDetail()
@@ -775,8 +825,8 @@ const exportImage = async () => {
   imageExporting.value = true
   try {
     // 获取阶段收益参数
-    const startDate = periodRange.value ? periodRange.value[0] : null
-    const endDate = periodRange.value ? periodRange.value[1] : null
+    const startDate = periodStart.value
+    const endDate = periodEnd.value
     
     // 调用API，分别传递参数
     const response = await positionAPI.exportClientPositionImage(
@@ -874,12 +924,19 @@ onMounted(() => {
   const urlParams = new URLSearchParams(window.location.search)
   const startDate = urlParams.get('start_date')
   const endDate = urlParams.get('end_date')
-  
+
   if (startDate && endDate) {
-    periodRange.value = [startDate, endDate]
+    periodStart.value = startDate
+    periodEnd.value = endDate
     console.log('从URL参数初始化阶段收益:', startDate, '至', endDate)
+  } else {
+    // 默认设置为上上周五到上周五
+    const [start, end] = getLastTwoFridays()
+    periodStart.value = start
+    periodEnd.value = end
+    console.log('默认阶段收益:', start, '至', end)
   }
-  
+
   loadPositionDetail()
 })
 </script>

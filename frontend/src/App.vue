@@ -75,7 +75,7 @@
 
           <el-menu-item index="/portfolio">
             <el-icon><TrendCharts /></el-icon>
-            <span>实盘组合</span>
+            <span>公募实盘</span>
           </el-menu-item>
 
           <el-menu-item index="/portfolio-backtest">
@@ -118,7 +118,7 @@
         </el-header>
 
         <!-- 主内容 -->
-        <el-main class="app-main">
+        <el-main :class="['app-main', mainLayoutClass]">
           <router-view v-slot="{ Component }">
             <transition name="fade" mode="out-in">
               <component :is="Component" />
@@ -131,7 +131,15 @@
 </template>
 
 <script setup>
-// 不需要导入任何内容，图标已在main.js中全局注册
+import { computed } from 'vue'
+import { useRoute } from 'vue-router'
+
+const route = useRoute()
+
+// 根据路由 meta.layout 动态计算主内容区的布局类名
+const mainLayoutClass = computed(() => {
+  return route.meta?.layout === 'table' ? 'layout-table' : 'layout-default'
+})
 </script>
 
 <style scoped>
@@ -190,8 +198,28 @@
 
 .app-main {
   background-color: #f5f5f5;
-  padding: 24px;
   overflow-y: auto;
+}
+
+/* 默认布局：普通表单/详情页，保留 padding */
+.app-main.layout-default {
+  padding: 24px;
+}
+
+/* 表格布局：彻底移除所有可能的右侧留白 */
+.el-main.layout-table {
+  padding: 0 !important;
+}
+
+/* Element Plus scrollbar 在表格页不预留空间 */
+.el-main.layout-table .el-scrollbar {
+  padding: 0;
+}
+
+.el-main.layout-table .el-scrollbar__wrap {
+  padding-right: 0 !important;
+  margin-right: 0 !important;
+  scrollbar-gutter: auto;
 }
 
 /* 页面切换动画 */

@@ -182,13 +182,18 @@
 
               <el-form-item label="回测范围">
                 <el-date-picker
-                  v-model="backtestParams.dateRange"
-                  type="daterange"
-                  range-separator="至"
-                  start-placeholder="开始日期"
-                  end-placeholder="结束日期"
+                  v-model="backtestParams.startDate"
+                  type="date"
+                  placeholder="期初日期"
                   value-format="YYYY-MM-DD"
-                  style="width: 100%"
+                  style="width: 48%; margin-right: 4%"
+                />
+                <el-date-picker
+                  v-model="backtestParams.endDate"
+                  type="date"
+                  placeholder="期末日期"
+                  value-format="YYYY-MM-DD"
+                  style="width: 48%"
                 />
               </el-form-item>
 
@@ -238,8 +243,8 @@
         <div class="section-title">
           <el-icon><Wallet /></el-icon>
           <span>持仓信息</span>
-          <span v-if="backtestParams.dateRange && backtestParams.dateRange.length === 2" class="backtest-period">
-            （回测时间：{{ backtestParams.dateRange[0] }} 至 {{ backtestParams.dateRange[1] }}）
+          <span v-if="backtestParams.startDate && backtestParams.endDate" class="backtest-period">
+            （回测时间：{{ backtestParams.startDate }} 至 {{ backtestParams.endDate }}）
           </span>
         </div>
         <el-row :gutter="16">
@@ -620,9 +625,9 @@
           <el-icon><Calendar /></el-icon>
           <span>区间收益</span>
         </div>
-        <el-table :data="backtestResult.monthlyReturns" border style="width: 100%">
-          <el-table-column prop="year" label="年份" width="100" align="center" fixed="left" />
-          <el-table-column label="1月" width="90" align="center">
+        <el-table :data="backtestResult.monthlyReturns" border style="width: 100%" :fit="true">
+          <el-table-column prop="year" label="年份" min-width="80" align="center" fixed="left" />
+          <el-table-column label="1月" min-width="70" align="center">
             <template #default="{ row }">
               <span v-if="row.jan !== null" :style="{ color: row.jan >= 0 ? '#F56C6C' : '#67C23A', fontWeight: 'bold' }">
                 {{ (row.jan * 100).toFixed(2) }}%
@@ -630,7 +635,7 @@
               <span v-else style="color: #C0C4CC">-</span>
             </template>
           </el-table-column>
-          <el-table-column label="2月" width="90" align="center">
+          <el-table-column label="2月" min-width="70" align="center">
             <template #default="{ row }">
               <span v-if="row.feb !== null" :style="{ color: row.feb >= 0 ? '#F56C6C' : '#67C23A', fontWeight: 'bold' }">
                 {{ (row.feb * 100).toFixed(2) }}%
@@ -638,7 +643,7 @@
               <span v-else style="color: #C0C4CC">-</span>
             </template>
           </el-table-column>
-          <el-table-column label="3月" width="90" align="center">
+          <el-table-column label="3月" min-width="70" align="center">
             <template #default="{ row }">
               <span v-if="row.mar !== null" :style="{ color: row.mar >= 0 ? '#F56C6C' : '#67C23A', fontWeight: 'bold' }">
                 {{ (row.mar * 100).toFixed(2) }}%
@@ -646,7 +651,7 @@
               <span v-else style="color: #C0C4CC">-</span>
             </template>
           </el-table-column>
-          <el-table-column label="4月" width="90" align="center">
+          <el-table-column label="4月" min-width="70" align="center">
             <template #default="{ row }">
               <span v-if="row.apr !== null" :style="{ color: row.apr >= 0 ? '#F56C6C' : '#67C23A', fontWeight: 'bold' }">
                 {{ (row.apr * 100).toFixed(2) }}%
@@ -654,7 +659,7 @@
               <span v-else style="color: #C0C4CC">-</span>
             </template>
           </el-table-column>
-          <el-table-column label="5月" width="90" align="center">
+          <el-table-column label="5月" min-width="70" align="center">
             <template #default="{ row }">
               <span v-if="row.may !== null" :style="{ color: row.may >= 0 ? '#F56C6C' : '#67C23A', fontWeight: 'bold' }">
                 {{ (row.may * 100).toFixed(2) }}%
@@ -662,7 +667,7 @@
               <span v-else style="color: #C0C4CC">-</span>
             </template>
           </el-table-column>
-          <el-table-column label="6月" width="90" align="center">
+          <el-table-column label="6月" min-width="70" align="center">
             <template #default="{ row }">
               <span v-if="row.jun !== null" :style="{ color: row.jun >= 0 ? '#F56C6C' : '#67C23A', fontWeight: 'bold' }">
                 {{ (row.jun * 100).toFixed(2) }}%
@@ -670,7 +675,7 @@
               <span v-else style="color: #C0C4CC">-</span>
             </template>
           </el-table-column>
-          <el-table-column label="7月" width="90" align="center">
+          <el-table-column label="7月" min-width="70" align="center">
             <template #default="{ row }">
               <span v-if="row.jul !== null" :style="{ color: row.jul >= 0 ? '#F56C6C' : '#67C23A', fontWeight: 'bold' }">
                 {{ (row.jul * 100).toFixed(2) }}%
@@ -678,7 +683,7 @@
               <span v-else style="color: #C0C4CC">-</span>
             </template>
           </el-table-column>
-          <el-table-column label="8月" width="90" align="center">
+          <el-table-column label="8月" min-width="70" align="center">
             <template #default="{ row }">
               <span v-if="row.aug !== null" :style="{ color: row.aug >= 0 ? '#F56C6C' : '#67C23A', fontWeight: 'bold' }">
                 {{ (row.aug * 100).toFixed(2) }}%
@@ -686,7 +691,7 @@
               <span v-else style="color: #C0C4CC">-</span>
             </template>
           </el-table-column>
-          <el-table-column label="9月" width="90" align="center">
+          <el-table-column label="9月" min-width="70" align="center">
             <template #default="{ row }">
               <span v-if="row.sep !== null" :style="{ color: row.sep >= 0 ? '#F56C6C' : '#67C23A', fontWeight: 'bold' }">
                 {{ (row.sep * 100).toFixed(2) }}%
@@ -694,7 +699,7 @@
               <span v-else style="color: #C0C4CC">-</span>
             </template>
           </el-table-column>
-          <el-table-column label="10月" width="90" align="center">
+          <el-table-column label="10月" min-width="70" align="center">
             <template #default="{ row }">
               <span v-if="row.oct !== null" :style="{ color: row.oct >= 0 ? '#F56C6C' : '#67C23A', fontWeight: 'bold' }">
                 {{ (row.oct * 100).toFixed(2) }}%
@@ -702,7 +707,7 @@
               <span v-else style="color: #C0C4CC">-</span>
             </template>
           </el-table-column>
-          <el-table-column label="11月" width="90" align="center">
+          <el-table-column label="11月" min-width="70" align="center">
             <template #default="{ row }">
               <span v-if="row.nov !== null" :style="{ color: row.nov >= 0 ? '#F56C6C' : '#67C23A', fontWeight: 'bold' }">
                 {{ (row.nov * 100).toFixed(2) }}%
@@ -710,7 +715,7 @@
               <span v-else style="color: #C0C4CC">-</span>
             </template>
           </el-table-column>
-          <el-table-column label="12月" width="90" align="center">
+          <el-table-column label="12月" min-width="70" align="center">
             <template #default="{ row }">
               <span v-if="row.dec !== null" :style="{ color: row.dec >= 0 ? '#F56C6C' : '#67C23A', fontWeight: 'bold' }">
                 {{ (row.dec * 100).toFixed(2) }}%
@@ -718,7 +723,7 @@
               <span v-else style="color: #C0C4CC">-</span>
             </template>
           </el-table-column>
-          <el-table-column label="全年" width="100" align="center" fixed="right">
+          <el-table-column label="全年" min-width="80" align="center" fixed="right">
             <template #default="{ row }">
               <span v-if="row.annual !== null" :style="{ color: row.annual >= 0 ? '#F56C6C' : '#67C23A', fontWeight: 'bold', fontSize: '14px' }">
                 {{ (row.annual * 100).toFixed(2) }}%
@@ -763,7 +768,9 @@ const savedPortfolios = ref([])
 // 回测参数
 const backtestParams = ref({
   initialCapital: 1000, // 初始资金（万元）
-  dateRange: null,
+  startDate: null,
+  endDate: null,
+  dateRange: null, // 保留用于兼容
   benchmark: '', // 对比基准
   rebalanceFrequency: 'none', // 默认不调仓
   reinvestDividend: false, // 默认不分红再投资
@@ -862,10 +869,8 @@ function setDateRange(days) {
     startDate.setDate(startDate.getDate() - days)
   }
 
-  backtestParams.value.dateRange = [
-    startDate.toISOString().split('T')[0],
-    endDate.toISOString().split('T')[0]
-  ]
+  backtestParams.value.startDate = startDate.toISOString().split('T')[0]
+  backtestParams.value.endDate = endDate.toISOString().split('T')[0]
 }
 
 // 将结束日期设置为今天（保持开始日期不变）
@@ -873,21 +878,15 @@ function setEndDateToday() {
   const today = new Date()
   today.setHours(0, 0, 0, 0)
 
-  // 如果已有日期范围，保持开始日期不变
-  const currentRange = backtestParams.value.dateRange
-  if (currentRange && currentRange.length === 2) {
-    backtestParams.value.dateRange = [
-      currentRange[0],
-      today.toISOString().split('T')[0]
-    ]
+  // 如果已有开始日期，保持开始日期不变
+  if (backtestParams.value.startDate) {
+    backtestParams.value.endDate = today.toISOString().split('T')[0]
   } else {
-    // 如果没有设置过日期范围，默认设置近1年到今天
+    // 如果没有设置过开始日期，默认设置近1年到今天
     const start = new Date()
     start.setDate(start.getDate() - 365)
-    backtestParams.value.dateRange = [
-      start.toISOString().split('T')[0],
-      today.toISOString().split('T')[0]
-    ]
+    backtestParams.value.startDate = start.toISOString().split('T')[0]
+    backtestParams.value.endDate = today.toISOString().split('T')[0]
   }
 }
 
@@ -911,7 +910,7 @@ async function runBacktest() {
     return
   }
 
-  if (!backtestParams.value.dateRange || backtestParams.value.dateRange.length !== 2) {
+  if (!backtestParams.value.startDate || !backtestParams.value.endDate) {
     ElMessage.warning('请选择回测时间范围')
     return
   }
@@ -931,8 +930,8 @@ async function runBacktest() {
         amount: weightMode.value === 'amount' ? item.amount : null
       })),
       initial_capital: backtestParams.value.initialCapital,
-      start_date: backtestParams.value.dateRange[0],
-      end_date: backtestParams.value.dateRange[1],
+      start_date: backtestParams.value.startDate,
+      end_date: backtestParams.value.endDate,
       benchmark: backtestParams.value.benchmark || null,
       rebalance_frequency: backtestParams.value.rebalanceFrequency,
       reinvest_dividend: backtestParams.value.reinvestDividend,
@@ -1371,15 +1370,13 @@ function drawQuarterlyContributionChart() {
 
   if (!quarterlyData || quarterlyData.length === 0) return
 
-  // 提取所有产品代码
+  // 只提取当前组合中的产品代码
   const fundCodes = new Set()
-  quarterlyData.forEach(item => {
-    Object.keys(item.contributions).forEach(code => fundCodes.add(code))
-  })
-
-  // 创建基金代码到简称的映射
   const fundCodeToName = {}
+
+  // 从当前组合中获取产品代码和名称映射
   portfolioCompositionData.value.forEach(item => {
+    fundCodes.add(item.fund_code)
     fundCodeToName[item.fund_code] = item.product_name
   })
 
@@ -1438,6 +1435,76 @@ function drawQuarterlyContributionChart() {
     }
   })
 
+  // ========== 严格的双Y轴0刻度线对齐算法 ==========
+  // 原理：0刻度线在Y轴上的相对位置 = |min| / (max - min)
+  // 左右两轴的这个比例必须完全相等
+
+  // 步骤1：计算左轴数据范围（季度收益 - 柱状图堆叠数据）
+  const leftAxisData = []
+  quarterlyData.forEach(item => {
+    let positiveSum = 0
+    let negativeSum = 0
+    Object.values(item.contributions).forEach(value => {
+      if (value > 0) positiveSum += value
+      else negativeSum += value
+    })
+    leftAxisData.push(positiveSum, negativeSum)
+  })
+
+  const leftDataMax = Math.max(...leftAxisData, 0)
+  const leftDataMin = Math.min(...leftAxisData, 0)
+
+  // 步骤2：计算右轴数据范围（累计收益 - 折线图数据）
+  const rightDataMax = Math.max(...cumulativeData, 0)
+  const rightDataMin = Math.min(...cumulativeData, 0)
+
+  // 步骤3：为数据添加10%的视觉边距
+  const leftDataMaxWithPadding = leftDataMax * 1.1
+  const leftDataMinWithPadding = leftDataMin * 1.1
+  const rightDataMaxWithPadding = rightDataMax * 1.1
+  const rightDataMinWithPadding = rightDataMin * 1.1
+
+  // 步骤4：计算0刻度线的相对位置（以左轴为基准）
+  // zeroRatio = |min| / (max - min)，表示0点在轴上的位置比例
+  const leftRange = leftDataMaxWithPadding - leftDataMinWithPadding
+  const zeroRatio = Math.abs(leftDataMinWithPadding) / leftRange
+
+  // 步骤5：根据zeroRatio反推右轴的min和max
+  // 已知：zeroRatio = |rightMin| / (rightMax - rightMin)
+  // 且：rightMax >= rightDataMaxWithPadding
+  // 求解：rightMin 和 rightMax，使得0点位置与左轴对齐
+
+  let leftAxisMin, leftAxisMax, rightAxisMin, rightAxisMax
+
+  leftAxisMin = leftDataMinWithPadding
+  leftAxisMax = leftDataMaxWithPadding
+
+  // 根据0点位置比例计算右轴范围
+  // zeroRatio = |rightMin| / (rightMax - rightMin)
+  // 变形得：rightMax = rightMin / zeroRatio + rightMin
+  // 即：rightMax = rightMin * (1/zeroRatio - 1) + rightMin = rightMin * (1 - zeroRatio) / zeroRatio
+
+  if (zeroRatio === 0) {
+    // 左轴没有负值，右轴也不应该有负值
+    rightAxisMin = 0
+    rightAxisMax = rightDataMaxWithPadding
+  } else if (zeroRatio === 1) {
+    // 左轴没有正值，右轴也不应该有正值
+    rightAxisMin = rightDataMinWithPadding
+    rightAxisMax = 0
+  } else {
+    // 一般情况：根据zeroRatio计算右轴范围
+    // 确保右轴能容纳数据的同时保持0点对齐
+    const rightRangeFromMax = rightDataMaxWithPadding / (1 - zeroRatio)
+    const rightRangeFromMin = Math.abs(rightDataMinWithPadding) / zeroRatio
+
+    // 取较大的范围以确保数据都能显示
+    const rightRange = Math.max(rightRangeFromMax, rightRangeFromMin)
+
+    rightAxisMax = rightRange * (1 - zeroRatio)
+    rightAxisMin = -rightRange * zeroRatio
+  }
+
   const option = {
     tooltip: {
       trigger: 'axis',
@@ -1487,8 +1554,12 @@ function drawQuarterlyContributionChart() {
         type: 'value',
         name: '季度收益（万元）',
         position: 'left',
+        min: leftAxisMin,
+        max: leftAxisMax,
         axisLabel: {
-          formatter: '{value}'
+          formatter: function(value) {
+            return Math.round(value)
+          }
         },
         splitLine: {
           show: true
@@ -1498,8 +1569,12 @@ function drawQuarterlyContributionChart() {
         type: 'value',
         name: '累计收益（万元）',
         position: 'right',
+        min: rightAxisMin,
+        max: rightAxisMax,
         axisLabel: {
-          formatter: '{value}'
+          formatter: function(value) {
+            return Math.round(value)
+          }
         },
         splitLine: {
           show: false

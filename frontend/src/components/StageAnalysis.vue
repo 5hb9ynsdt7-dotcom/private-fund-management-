@@ -354,16 +354,33 @@ const renderTrendCharts = () => {
     },
     tooltip: {
       trigger: 'axis',
+      axisPointer: {
+        type: 'cross',
+        label: {
+          backgroundColor: '#6a7985'
+        }
+      },
       formatter: function(params) {
-        let result = `<div style="margin-bottom: 5px;">${params[0].axisValue}</div>`
+        let result = `<div style="margin-bottom: 5px; font-weight: 600;">${params[0].axisValue}</div>`
         params.forEach(param => {
+          // 跳过零基准线
+          if (param.seriesName === '零基准线') {
+            return
+          }
+
           if (param.seriesName === '累计绝对收益') {
-            const value = formatMoney(param.value)
+            const value = Number(param.value).toLocaleString('zh-CN', {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2
+            })
             const color = param.value >= 0 ? '#f56c6c' : '#67c23a'  // 正收益红色，负收益绿色
-            result += `<div><span style="display:inline-block;margin-right:5px;border-radius:10px;width:10px;height:10px;background-color:${color};"></span>累计收益: ${value}</div>`
+            result += `<div style="margin-top: 5px;"><span style="display:inline-block;margin-right:5px;border-radius:10px;width:10px;height:10px;background-color:${color};"></span>累计收益: <span style="font-weight: 600;">${value}</span></div>`
           } else if (param.seriesName === '投资规模') {
-            const value = formatMoney(param.value)
-            result += `<div><span style="display:inline-block;margin-right:5px;border-radius:10px;width:10px;height:10px;background-color:#c0c4cc;"></span>投资规模: ${value}</div>`
+            const value = Number(param.value).toLocaleString('zh-CN', {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2
+            })
+            result += `<div style="margin-top: 5px;"><span style="display:inline-block;margin-right:5px;border-radius:10px;width:10px;height:10px;background-color:#c0c4cc;"></span>投资规模: <span style="font-weight: 600;">${value}</span></div>`
           }
         })
         return result
@@ -497,10 +514,10 @@ const renderTrendCharts = () => {
 }
 
 // 设置预设时间段
-const setPresetPeriod = (preset) => {
+const setPresetPeriod = async (preset) => {
   const now = new Date()
   const today = now.toISOString().split('T')[0]
-  
+
   switch (preset) {
     case '3months':
       const threeMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 3, now.getDate())
@@ -515,8 +532,16 @@ const setPresetPeriod = (preset) => {
       periodDateRange.value = [oneYearAgo.toISOString().split('T')[0], today]
       break
     case 'all':
-      // 设置为很早的日期到今天
-      periodDateRange.value = ['2020-01-01', today]
+      // 获取客户首次买入产品的时间
+      try {
+        const data = await request.get(`/api/transaction/clients/${props.groupId}/earliest-transaction-date`)
+        const earliestDate = data.earliest_date || '2020-01-01'
+        periodDateRange.value = [earliestDate, today]
+      } catch (error) {
+        console.error('获取最早交易日期失败:', error)
+        // 如果获取失败，使用默认日期
+        periodDateRange.value = ['2020-01-01', today]
+      }
       break
   }
 }

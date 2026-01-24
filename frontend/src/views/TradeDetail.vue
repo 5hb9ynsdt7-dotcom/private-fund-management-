@@ -380,10 +380,10 @@
     </div>
 
     <!-- 交易明细对话框 -->
-    <el-dialog 
-      v-model="detailDialogVisible" 
+    <el-dialog
+      v-model="detailDialogVisible"
       :title="`${selectedProduct?.product_name || selectedProduct?.fund_name} - 交易明细`"
-      width="80%"
+      width="700px"
       destroy-on-close
     >
       <el-table
@@ -396,18 +396,18 @@
         <el-table-column
           prop="confirmed_date"
           label="交易日期"
-          width="120"
+          width="130"
           align="center"
         >
           <template #default="{ row }">
             <span>{{ formatDate(row.confirmed_date) }}</span>
           </template>
         </el-table-column>
-        
+
         <el-table-column
           prop="transaction_type"
           label="交易类型"
-          width="120"
+          width="130"
           align="center"
         >
           <template #default="{ row }">
@@ -416,22 +416,22 @@
             </el-tag>
           </template>
         </el-table-column>
-        
+
         <el-table-column
           prop="confirmed_shares"
           label="确认份额"
-          width="120"
+          width="140"
           align="center"
         >
           <template #default="{ row }">
             <span>{{ formatShares(row.confirmed_shares) }}</span>
           </template>
         </el-table-column>
-        
+
         <el-table-column
           prop="confirmed_amount"
           label="确认金额"
-          width="120"
+          width="140"
           align="center"
         >
           <template #default="{ row }">
@@ -440,11 +440,11 @@
             </span>
           </template>
         </el-table-column>
-        
+
         <el-table-column
           prop="transaction_fee"
           label="手续费"
-          width="100"
+          width="120"
           align="center"
         >
           <template #default="{ row }">

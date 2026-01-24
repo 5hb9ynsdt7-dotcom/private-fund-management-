@@ -117,6 +117,12 @@ async def create_or_update_rule(
             if rule_data.fee_structure is not None:
                 existing_rule.fee_structure = rule_data.fee_structure
             existing_rule.updated_at = datetime.now()
+
+            # 如果提供了基金名称，同时更新Fund表中的产品名称
+            if rule_data.fund_name and fund:
+                fund.fund_name = rule_data.fund_name
+                logger.info(f"同步更新基金 {rule_data.fund_code} 的产品名称为: {rule_data.fund_name}")
+
             message = f"成功更新基金 {rule_data.fund_code} 的档期规则"
         else:
             # 创建新规则

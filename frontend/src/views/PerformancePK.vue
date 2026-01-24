@@ -21,25 +21,11 @@
     <!-- 筛选区 -->
     <el-card class="filter-section">
       <el-row :gutter="16">
-        <!-- 对比类型选择 -->
-        <el-col :span="24">
-          <div class="filter-label">对比类型</div>
-          <el-radio-group v-model="compareType" @change="handleCompareTypeChange">
-            <el-radio-button value="product">单品对比</el-radio-button>
-            <el-radio-button value="portfolio">组合对比</el-radio-button>
-          </el-radio-group>
-          <div class="type-hint">
-            {{ compareType === 'product' ? '选择2-10个产品进行对比，同时可与基准对比' : '选择保存的组合进行对比，同时可与基准对比' }}
-          </div>
-        </el-col>
-      </el-row>
-
-      <el-row :gutter="16" style="margin-top: 20px;">
         <!-- 对象选择 -->
         <el-col :span="8">
           <div class="filter-label">
-            {{ compareType === 'portfolio' ? '选择组合' : '选择产品' }}
-            <el-tooltip content="最多选择10个对象进行对比">
+            选择产品/组合
+            <el-tooltip content="最多选择10个对象进行对比，支持单品和组合混合对比">
               <el-icon><QuestionFilled /></el-icon>
             </el-tooltip>
           </div>
@@ -47,26 +33,42 @@
             v-model="selectedObjects"
             multiple
             filterable
-            :placeholder="compareType === 'portfolio' ? '搜索并选择组合' : '搜索并选择产品（私募/公募基金）'"
+            placeholder="搜索并选择产品或组合"
             style="width: 100%"
             @change="handleObjectChange"
             :loading="loadingProducts"
           >
-            <el-option
-              v-for="item in availableObjects"
-              :key="item.id"
-              :label="item.name"
-              :value="item.id"
-              :disabled="selectedObjects.length >= 10 && !selectedObjects.includes(item.id)"
-            >
-              <div style="display: flex; justify-content: space-between; align-items: center;">
-                <span>{{ item.name }}</span>
-                <span style="color: #8492a6; font-size: 12px;">
-                  {{ item.code }}
-                  <el-tag v-if="item.type === 'public'" size="small" type="info" style="margin-left: 4px;">公募</el-tag>
-                </span>
-              </div>
-            </el-option>
+            <el-option-group label="保存的组合">
+              <el-option
+                v-for="item in portfolioObjects"
+                :key="item.id"
+                :label="item.name"
+                :value="item.id"
+                :disabled="selectedObjects.length >= 10 && !selectedObjects.includes(item.id)"
+              >
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                  <span>{{ item.name }}</span>
+                  <el-tag size="small" type="success" style="margin-left: 4px;">组合</el-tag>
+                </div>
+              </el-option>
+            </el-option-group>
+            <el-option-group label="产品">
+              <el-option
+                v-for="item in productObjects"
+                :key="item.id"
+                :label="item.name"
+                :value="item.id"
+                :disabled="selectedObjects.length >= 10 && !selectedObjects.includes(item.id)"
+              >
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                  <span>{{ item.name }}</span>
+                  <span style="color: #8492a6; font-size: 12px;">
+                    {{ item.code }}
+                    <el-tag v-if="item.type === 'public'" size="small" type="info" style="margin-left: 4px;">公募</el-tag>
+                  </span>
+                </div>
+              </el-option>
+            </el-option-group>
           </el-select>
         </el-col>
 
@@ -85,13 +87,23 @@
             </el-select>
             <el-date-picker
               v-if="timeRange === 'custom'"
-              v-model="customTimeRange"
-              type="daterange"
-              range-separator="至"
-              start-placeholder="开始日期"
-              end-placeholder="结束日期"
+              v-model="customStartDate"
+              type="date"
+              placeholder="期初日期"
               format="YYYY-MM-DD"
               value-format="YYYY-MM-DD"
+              style="width: 48%; margin-right: 4%"
+              @change="onCustomDateChange"
+            />
+            <el-date-picker
+              v-if="timeRange === 'custom'"
+              v-model="customEndDate"
+              type="date"
+              placeholder="期末日期"
+              format="YYYY-MM-DD"
+              value-format="YYYY-MM-DD"
+              style="width: 48%"
+              @change="onCustomDateChange"
             />
           </el-space>
         </el-col>
@@ -108,6 +120,7 @@
             <el-option label="无" value="" />
             <el-option label="沪深300" value="000300" />
             <el-option label="中证500" value="000905" />
+            <el-option label="中证1000" value="000852" />
             <el-option label="上证指数" value="000001" />
             <el-option label="创业板指" value="399006" />
             <el-option label="恒生指数" value="HSI" />
@@ -227,7 +240,7 @@
           <el-table-column prop="return1m" label="近1月" align="center">
             <template #default="scope">
               <span v-if="scope.row.return1m !== null" :style="{ color: scope.row.return1m >= 0 ? '#F56C6C' : '#67C23A' }">
-                {{ scope.row.return1m >= 0 ? '+' : '' }}{{ scope.row.return1m }}%
+                {{ scope.row.return1m >= 0 ? '+' : '' }}{{ scope.row.return1m.toFixed(2) }}%
               </span>
               <span v-else>-</span>
             </template>
@@ -235,7 +248,7 @@
           <el-table-column prop="return3m" label="近3月" align="center">
             <template #default="scope">
               <span v-if="scope.row.return3m !== null" :style="{ color: scope.row.return3m >= 0 ? '#F56C6C' : '#67C23A' }">
-                {{ scope.row.return3m >= 0 ? '+' : '' }}{{ scope.row.return3m }}%
+                {{ scope.row.return3m >= 0 ? '+' : '' }}{{ scope.row.return3m.toFixed(2) }}%
               </span>
               <span v-else>-</span>
             </template>
@@ -243,7 +256,7 @@
           <el-table-column prop="return1y" label="近1年" align="center">
             <template #default="scope">
               <span v-if="scope.row.return1y !== null" :style="{ color: scope.row.return1y >= 0 ? '#F56C6C' : '#67C23A' }">
-                {{ scope.row.return1y >= 0 ? '+' : '' }}{{ scope.row.return1y }}%
+                {{ scope.row.return1y >= 0 ? '+' : '' }}{{ scope.row.return1y.toFixed(2) }}%
               </span>
               <span v-else>-</span>
             </template>
@@ -251,7 +264,7 @@
           <el-table-column prop="return3y" label="近3年" align="center">
             <template #default="scope">
               <span v-if="scope.row.return3y !== null" :style="{ color: scope.row.return3y >= 0 ? '#F56C6C' : '#67C23A' }">
-                {{ scope.row.return3y >= 0 ? '+' : '' }}{{ scope.row.return3y }}%
+                {{ scope.row.return3y >= 0 ? '+' : '' }}{{ scope.row.return3y.toFixed(2) }}%
               </span>
               <span v-else>-</span>
             </template>
@@ -259,7 +272,7 @@
           <el-table-column prop="return5y" label="近5年" align="center">
             <template #default="scope">
               <span v-if="scope.row.return5y !== null" :style="{ color: scope.row.return5y >= 0 ? '#F56C6C' : '#67C23A' }">
-                {{ scope.row.return5y >= 0 ? '+' : '' }}{{ scope.row.return5y }}%
+                {{ scope.row.return5y >= 0 ? '+' : '' }}{{ scope.row.return5y.toFixed(2) }}%
               </span>
               <span v-else>-</span>
             </template>
@@ -267,7 +280,7 @@
           <el-table-column prop="ytdReturn" label="今年以来" align="center">
             <template #default="scope">
               <span v-if="scope.row.ytdReturn !== null" :style="{ color: scope.row.ytdReturn >= 0 ? '#F56C6C' : '#67C23A' }">
-                {{ scope.row.ytdReturn >= 0 ? '+' : '' }}{{ scope.row.ytdReturn }}%
+                {{ scope.row.ytdReturn >= 0 ? '+' : '' }}{{ scope.row.ytdReturn.toFixed(2) }}%
               </span>
               <span v-else>-</span>
             </template>
@@ -298,21 +311,21 @@
           <el-table-column prop="annualReturn" label="年化收益" align="center">
             <template #default="scope">
               <span v-if="scope.row.annualReturn !== null" :style="{ color: scope.row.annualReturn >= 0 ? '#F56C6C' : '#67C23A' }">
-                {{ scope.row.annualReturn >= 0 ? '+' : '' }}{{ scope.row.annualReturn }}%
+                {{ scope.row.annualReturn >= 0 ? '+' : '' }}{{ scope.row.annualReturn.toFixed(2) }}%
               </span>
               <span v-else>-</span>
             </template>
           </el-table-column>
           <el-table-column prop="volatility" label="年化波动率" align="center">
             <template #default="scope">
-              <span v-if="scope.row.volatility !== null">{{ scope.row.volatility }}%</span>
+              <span v-if="scope.row.volatility !== null">{{ scope.row.volatility.toFixed(2) }}%</span>
               <span v-else>-</span>
             </template>
           </el-table-column>
           <el-table-column prop="maxDrawdown" label="最大回撤" align="center">
             <template #default="scope">
               <span v-if="scope.row.maxDrawdown !== null" style="color: #67C23A;">
-                -{{ scope.row.maxDrawdown }}%
+                -{{ scope.row.maxDrawdown.toFixed(2) }}%
               </span>
               <span v-else>-</span>
             </template>
@@ -332,13 +345,13 @@
           </el-table-column>
           <el-table-column prop="sharpe" label="夏普比率" align="center">
             <template #default="scope">
-              <span v-if="scope.row.sharpe !== null">{{ scope.row.sharpe }}</span>
+              <span v-if="scope.row.sharpe !== null">{{ scope.row.sharpe.toFixed(2) }}</span>
               <span v-else>-</span>
             </template>
           </el-table-column>
           <el-table-column prop="calmar" label="卡玛比率" align="center">
             <template #default="scope">
-              <span v-if="scope.row.calmar !== null">{{ scope.row.calmar }}</span>
+              <span v-if="scope.row.calmar !== null">{{ scope.row.calmar.toFixed(2) }}</span>
               <span v-else>-</span>
             </template>
           </el-table-column>
@@ -391,7 +404,7 @@
             <el-table-column prop="year_return" label="全年" align="center" class-name="year-return-column">
               <template #default="scope">
                 <span v-if="scope.row.year_return !== null" :style="{ color: scope.row.year_return >= 0 ? '#F56C6C' : '#67C23A' }">
-                  {{ scope.row.year_return >= 0 ? '+' : '' }}{{ Math.round(scope.row.year_return) }}%
+                  {{ scope.row.year_return >= 0 ? '+' : '' }}{{ scope.row.year_return.toFixed(1) }}%
                 </span>
                 <span v-else>-</span>
               </template>
@@ -405,14 +418,14 @@
             >
               <template #default="scope">
                 <span v-if="scope.row[`m${month}`] !== null" :style="{ color: scope.row[`m${month}`] >= 0 ? '#F56C6C' : '#67C23A' }">
-                  {{ scope.row[`m${month}`] >= 0 ? '+' : '' }}{{ Math.round(scope.row[`m${month}`]) }}%
+                  {{ scope.row[`m${month}`] >= 0 ? '+' : '' }}{{ scope.row[`m${month}`].toFixed(1) }}%
                 </span>
                 <span v-else>-</span>
               </template>
             </el-table-column>
             <el-table-column prop="win_rate" label="月胜率" align="center" class-name="win-rate-column">
               <template #default="scope">
-                <span v-if="scope.row.win_rate !== null">{{ Math.round(scope.row.win_rate) }}%</span>
+                <span v-if="scope.row.win_rate !== null">{{ scope.row.win_rate.toFixed(1) }}%</span>
                 <span v-else>-</span>
               </template>
             </el-table-column>
@@ -440,7 +453,7 @@
               <el-table-column prop="year_return" label="全年" align="center" class-name="year-return-column">
                 <template #default="scope">
                   <span v-if="scope.row.year_return !== null" :style="{ color: scope.row.year_return >= 0 ? '#F56C6C' : '#67C23A' }">
-                    {{ scope.row.year_return >= 0 ? '+' : '' }}{{ Math.round(scope.row.year_return) }}%
+                    {{ scope.row.year_return >= 0 ? '+' : '' }}{{ scope.row.year_return.toFixed(1) }}%
                   </span>
                   <span v-else>-</span>
                 </template>
@@ -454,14 +467,14 @@
               >
                 <template #default="scope">
                   <span v-if="scope.row[`m${month}`] !== null" :style="{ color: scope.row[`m${month}`] >= 0 ? '#F56C6C' : '#67C23A' }">
-                    {{ scope.row[`m${month}`] >= 0 ? '+' : '' }}{{ Math.round(scope.row[`m${month}`]) }}%
+                    {{ scope.row[`m${month}`] >= 0 ? '+' : '' }}{{ scope.row[`m${month}`].toFixed(1) }}%
                   </span>
                   <span v-else>-</span>
                 </template>
               </el-table-column>
               <el-table-column prop="win_rate" label="月胜率" align="center" class-name="win-rate-column">
                 <template #default="scope">
-                  <span v-if="scope.row.win_rate !== null">{{ Math.round(scope.row.win_rate) }}%</span>
+                  <span v-if="scope.row.win_rate !== null">{{ scope.row.win_rate.toFixed(1) }}%</span>
                   <span v-else>-</span>
                 </template>
               </el-table-column>
@@ -544,16 +557,20 @@ import * as echarts from 'echarts'
 import axios from 'axios'
 import html2canvas from 'html2canvas'
 
-// 对比类型
+// 对比类型（保留用于兼容，但不再显示切换按钮）
 const compareType = ref('product')
 const selectedObjects = ref([])
 const timeRange = ref('1y')
 const customTimeRange = ref([])
+const customStartDate = ref(null)
+const customEndDate = ref(null)
 const selectedBenchmark = ref('')
 const alignMode = ref('common')
 
-// 可选对象列表（产品或组合）
-const availableObjects = ref([])
+// 可选对象列表 - 分别存储产品和组合
+const productObjects = ref([])
+const portfolioObjects = ref([])
+const availableObjects = computed(() => [...portfolioObjects.value, ...productObjects.value])
 const loadingProducts = ref(false)
 
 // 图表类型
@@ -614,38 +631,35 @@ const getMonthlyDataByYear = (year) => {
   })
 }
 
-// 加载可用对象
+// 加载可用对象 - 同时加载产品和组合
 const loadAvailableObjects = async () => {
   loadingProducts.value = true
   try {
-    if (compareType.value === 'portfolio') {
-      // 加载保存的组合
-      const response = await axios.get('http://localhost:8000/api/portfolio-backtest/saved')
-      availableObjects.value = response.data.map(item => ({
-        id: item.id.toString(),
-        name: item.name,
-        code: item.id.toString(),
-        category: '组合',
-        type: 'portfolio'
-      }))
-    } else {
-      // 加载产品列表（私募+公募）
-      const response = await axios.get('http://localhost:8000/api/performance/products')
-      availableObjects.value = response.data.data || []
-    }
+    // 并行加载产品和组合
+    const [productsResponse, portfoliosResponse] = await Promise.all([
+      axios.get('http://localhost:8000/api/performance/products'),
+      axios.get('http://localhost:8000/api/portfolio-backtest/portfolios')
+    ])
+
+    // 处理产品列表
+    productObjects.value = productsResponse.data.data || []
+
+    // 处理组合列表
+    const portfolios = portfoliosResponse.data.data || []
+    portfolioObjects.value = portfolios.map(item => ({
+      id: `portfolio_${item.id}`,
+      name: item.portfolio_name,
+      code: item.id.toString(),
+      category: '组合',
+      type: 'portfolio',
+      portfolio_id: item.id
+    }))
   } catch (error) {
     console.error('加载对象列表失败:', error)
     ElMessage.error('加载数据失败')
   } finally {
     loadingProducts.value = false
   }
-}
-
-// 对比类型变化
-const handleCompareTypeChange = () => {
-  selectedObjects.value = []
-  comparisonResult.value = null
-  loadAvailableObjects()
 }
 
 // 对象选择变化
@@ -659,6 +673,17 @@ const handleObjectChange = (value) => {
 // 时间区间变化
 const handleTimeRangeChange = () => {
   if (timeRange.value !== 'custom') {
+    customTimeRange.value = []
+    customStartDate.value = null
+    customEndDate.value = null
+  }
+}
+
+// 自定义日期变化时同步到customTimeRange
+const onCustomDateChange = () => {
+  if (customStartDate.value && customEndDate.value) {
+    customTimeRange.value = [customStartDate.value, customEndDate.value]
+  } else {
     customTimeRange.value = []
   }
 }
@@ -678,12 +703,30 @@ const handleCompare = async () => {
   comparing.value = true
 
   try {
+    // 准备对比对象数据
+    const compareObjects = selectedObjectsList.value.map(obj => {
+      // 对于组合类型，提取真实的portfolio_id
+      if (obj.type === 'portfolio') {
+        // 从id中提取数字部分（去掉portfolio_前缀）
+        const portfolioId = obj.id.replace('portfolio_', '')
+        return {
+          id: portfolioId,
+          type: 'portfolio'
+        }
+      } else {
+        // 产品类型直接使用id
+        return {
+          id: obj.id,
+          type: obj.type
+        }
+      }
+    })
+
+    console.log('发送对比请求:', compareObjects)
+
     // 调用后端API进行对比分析
     const response = await axios.post('http://localhost:8000/api/performance/compare', {
-      objects: selectedObjectsList.value.map(obj => ({
-        id: obj.id,
-        type: obj.type
-      })),
+      objects: compareObjects,
       time_range: timeRange.value,
       custom_range: customTimeRange.value.length ? customTimeRange.value : null,
       benchmark: selectedBenchmark.value || null,
@@ -1283,6 +1326,14 @@ const handleLoadPK = async (pkId) => {
     compareType.value = record.compare_type
     timeRange.value = record.time_range
     customTimeRange.value = record.custom_range || []
+    // 恢复自定义日期的独立字段
+    if (record.custom_range && record.custom_range.length === 2) {
+      customStartDate.value = record.custom_range[0]
+      customEndDate.value = record.custom_range[1]
+    } else {
+      customStartDate.value = null
+      customEndDate.value = null
+    }
     selectedBenchmark.value = record.benchmark
     alignMode.value = record.align_mode || 'common'
 

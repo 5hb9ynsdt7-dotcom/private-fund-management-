@@ -70,16 +70,23 @@
       <el-row :gutter="16" align="middle">
         <el-col :span="12">
           <el-date-picker
-            v-model="dateRange"
-            type="daterange"
-            range-separator="至"
-            start-placeholder="开始日期"
-            end-placeholder="结束日期"
-            style="width: 100%"
+            v-model="startDate"
+            type="date"
+            placeholder="期初日期"
+            style="width: 48%; margin-right: 4%"
             format="MM/DD"
             value-format="YYYY-MM-DD"
-            :shortcuts="dateShortcuts"
-            @change="onDateRangeChange"
+            @change="onStartDateChange"
+            clearable
+          />
+          <el-date-picker
+            v-model="endDate"
+            type="date"
+            placeholder="期末日期"
+            style="width: 48%"
+            format="MM/DD"
+            value-format="YYYY-MM-DD"
+            @change="onEndDateChange"
             clearable
           />
         </el-col>
@@ -110,8 +117,36 @@
     <el-card class="table-section">
       <template #header>
         <div class="table-header">
-          <span>产品列表</span>
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <span>产品列表</span>
+            <el-tag v-if="currentLoadedList" type="success" closable @close="clearLoadedList">
+              当前清单：{{ currentLoadedList.name }}
+            </el-tag>
+          </div>
           <div class="table-actions">
+            <el-dropdown @command="handleListCommand" style="margin-right: 8px;">
+              <el-button size="small" type="primary">
+                <el-icon><Collection /></el-icon>
+                清单管理
+                <el-icon class="el-icon--right"><ArrowDown /></el-icon>
+              </el-button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item command="save">
+                    <el-icon><DocumentAdd /></el-icon>
+                    保存当前清单
+                  </el-dropdown-item>
+                  <el-dropdown-item command="manage" divided>
+                    <el-icon><Setting /></el-icon>
+                    管理清单
+                  </el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
+            <el-button @click="handleListCommand('load')" size="small" type="success" style="margin-right: 8px;">
+              <el-icon><FolderOpened /></el-icon>
+              已保存清单
+            </el-button>
             <el-button @click="refreshData" size="small">
               <el-icon><Refresh /></el-icon>
               刷新
@@ -274,6 +309,179 @@
         />
       </div>
     </el-card>
+
+    <!-- 保存清单对话框 -->
+    <el-dialog
+      v-model="saveListDialogVisible"
+      title="保存产品清单"
+      width="500px"
+    >
+      <el-form :model="saveListForm" label-width="100px">
+        <el-form-item label="清单名称" required>
+          <el-input
+            v-model="saveListForm.name"
+            placeholder="请输入清单名称"
+            maxlength="50"
+            show-word-limit
+          />
+        </el-form-item>
+        <el-form-item label="清单描述">
+          <el-input
+            v-model="saveListForm.description"
+            type="textarea"
+            :rows="3"
+            placeholder="请输入清单描述（可选）"
+            maxlength="200"
+            show-word-limit
+          />
+        </el-form-item>
+        <el-form-item label="产品数量">
+          <el-tag type="info">{{ selectedProducts.length }} 个产品</el-tag>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="saveListDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="saveProductList" :loading="saveListLoading">
+          保存
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 加载清单对话框 -->
+    <el-dialog
+      v-model="loadListDialogVisible"
+      title="加载产品清单"
+      width="900px"
+    >
+      <el-table
+        v-loading="loadListLoading"
+        :data="productLists"
+        style="width: 100%"
+        row-key="id"
+        :expand-row-keys="expandedListIds"
+        @expand-change="handleListExpand"
+      >
+        <el-table-column type="expand">
+          <template #default="{ row }">
+            <div style="padding: 20px;">
+              <el-table :data="row.items" border style="width: 100%">
+                <el-table-column prop="fund_code" label="产品代码" width="120" align="center" />
+                <el-table-column prop="short_name" label="产品简称" min-width="200" show-overflow-tooltip />
+                <el-table-column label="最新净值日期" width="150" align="center">
+                  <template #default="{ row: item }">
+                    <span :style="{ color: getNavDateColor(item.latest_nav_date) }">
+                      {{ formatDate(item.latest_nav_date) }}
+                    </span>
+                  </template>
+                </el-table-column>
+              </el-table>
+              <div style="margin-top: 16px; text-align: right;">
+                <el-button type="primary" @click="handleLoadList(row)">
+                  加载此清单
+                </el-button>
+                <el-button @click="handleEditList(row)">
+                  编辑清单
+                </el-button>
+              </div>
+            </div>
+          </template>
+        </el-table-column>
+        <el-table-column prop="name" label="清单名称" min-width="150" />
+        <el-table-column prop="description" label="描述" min-width="180" show-overflow-tooltip />
+        <el-table-column label="产品数量" width="100" align="center">
+          <template #default="{ row }">
+            <el-tag size="small">{{ row.items?.length || 0 }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="创建时间" width="160" align="center">
+          <template #default="{ row }">
+            {{ formatDateTime(row.created_at) }}
+          </template>
+        </el-table-column>
+      </el-table>
+      <template #footer>
+        <el-button @click="loadListDialogVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 管理清单对话框 -->
+    <el-dialog
+      v-model="manageListDialogVisible"
+      title="管理产品清单"
+      width="700px"
+    >
+      <el-table
+        v-loading="loadListLoading"
+        :data="productLists"
+        style="width: 100%"
+      >
+        <el-table-column prop="name" label="清单名称" min-width="150" />
+        <el-table-column prop="description" label="描述" min-width="180" show-overflow-tooltip />
+        <el-table-column label="产品数量" width="100" align="center">
+          <template #default="{ row }">
+            <el-tag size="small">{{ row.items?.length || 0 }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="150" align="center" fixed="right">
+          <template #default="{ row }">
+            <el-button
+              type="danger"
+              size="small"
+              @click="deleteProductList(row.id)"
+            >
+              删除
+            </el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <template #footer>
+        <el-button @click="manageListDialogVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 编辑清单对话框 -->
+    <el-dialog
+      v-model="editListDialogVisible"
+      title="编辑产品清单"
+      width="900px"
+    >
+      <el-form :model="editListForm" label-width="100px">
+        <el-form-item label="清单名称">
+          <el-input v-model="editListForm.name" placeholder="请输入清单名称" />
+        </el-form-item>
+        <el-form-item label="清单描述">
+          <el-input
+            v-model="editListForm.description"
+            type="textarea"
+            :rows="2"
+            placeholder="请输入清单描述（可选）"
+          />
+        </el-form-item>
+      </el-form>
+
+      <el-divider content-position="left">清单产品</el-divider>
+
+      <el-transfer
+        v-model="editListForm.selectedFundCodes"
+        :data="allFundsForTransfer"
+        :titles="['可选产品', '已选产品']"
+        :button-texts="['移除', '添加']"
+        :props="{
+          key: 'value',
+          label: 'label'
+        }"
+        filterable
+        filter-placeholder="搜索产品"
+        style="text-align: left; display: inline-block"
+      />
+
+      <template #footer>
+        <el-button @click="editListDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="updateProductList" :loading="saveListLoading">
+          保存修改
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -292,6 +500,27 @@ const tableData = ref([])
 const hiddenProducts = ref(new Set()) // 存储被隐藏的产品代码
 const selectedProducts = ref([])
 
+// 清单管理相关数据
+const saveListDialogVisible = ref(false)
+const loadListDialogVisible = ref(false)
+const manageListDialogVisible = ref(false)
+const editListDialogVisible = ref(false)
+const saveListLoading = ref(false)
+const loadListLoading = ref(false)
+const productLists = ref([])
+const expandedListIds = ref([])
+const currentLoadedList = ref(null) // 当前加载的清单
+const saveListForm = reactive({
+  name: '',
+  description: ''
+})
+const editListForm = reactive({
+  id: null,
+  name: '',
+  description: '',
+  selectedFundCodes: []
+})
+
 // 统计数据
 const statistics = reactive({
   totalProducts: 0,
@@ -302,6 +531,8 @@ const statistics = reactive({
 
 // 日期范围选择
 const dateRange = ref([])
+const startDate = ref(null)
+const endDate = ref(null)
 const selectedPeriodDisplay = ref('近一周')
 
 // 日期快捷选项
@@ -355,6 +586,12 @@ const pagination = reactive({
 const displayData = computed(() => {
   let filtered = tableData.value.filter(item => !hiddenProducts.value.has(item.fund_code))
 
+  // 如果有加载的清单，只显示清单中的产品
+  if (currentLoadedList.value) {
+    const listFundCodes = new Set(currentLoadedList.value.items.map(item => item.fund_code))
+    filtered = filtered.filter(item => listFundCodes.has(item.fund_code))
+  }
+
   // 三级排序逻辑
   filtered.sort((a, b) => {
     // 第一级：大类策略排序
@@ -396,6 +633,14 @@ const displayData = computed(() => {
   const start = (pagination.page - 1) * pagination.pageSize
   const end = start + pagination.pageSize
   return filtered.slice(start, end)
+})
+
+// Transfer组件数据源
+const allFundsForTransfer = computed(() => {
+  return tableData.value.map(fund => ({
+    value: fund.fund_code,
+    label: `${fund.fund_code} - ${fund.short_name || fund.fund_name}`
+  }))
 })
 
 // 加载数据
@@ -642,28 +887,46 @@ const downloadSelectedData = async () => {
 // 日期范围变化处理
 const onDateRangeChange = (dates) => {
   if (dates && dates.length === 2) {
-    const startDate = new Date(dates[0])
-    const endDate = new Date(dates[1])
-    
+    const startDateObj = new Date(dates[0])
+    const endDateObj = new Date(dates[1])
+
     // 格式化显示日期（MM/DD格式）
     const formatDate = (date) => {
       const month = (date.getMonth() + 1).toString().padStart(2, '0')
       const day = date.getDate().toString().padStart(2, '0')
       return `${month}${day}`
     }
-    
-    selectedPeriodDisplay.value = `${formatDate(startDate)}-${formatDate(endDate)}`
+
+    selectedPeriodDisplay.value = `${formatDate(startDateObj)}-${formatDate(endDateObj)}`
   } else {
     selectedPeriodDisplay.value = '近一周'
   }
-  
+
   // 重新加载数据
   loadData()
+}
+
+// 期初日期变化处理
+const onStartDateChange = (date) => {
+  if (date && endDate.value) {
+    dateRange.value = [date, endDate.value]
+    onDateRangeChange(dateRange.value)
+  }
+}
+
+// 期末日期变化处理
+const onEndDateChange = (date) => {
+  if (startDate.value && date) {
+    dateRange.value = [startDate.value, date]
+    onDateRangeChange(dateRange.value)
+  }
 }
 
 // 搜索处理
 const resetSearch = () => {
   dateRange.value = []
+  startDate.value = null
+  endDate.value = null
   selectedPeriodDisplay.value = '近一周'
   pagination.page = 1
   updateStatistics()
@@ -701,6 +964,19 @@ const formatPercent = (percent) => {
   const value = parseFloat(percent)
   const sign = value > 0 ? '+' : ''
   return `${sign}${value.toFixed(2)}%`
+}
+
+// 根据净值日期返回颜色
+const getNavDateColor = (navDate) => {
+  if (!navDate) return '#999'
+
+  const today = new Date()
+  const nav = new Date(navDate)
+  const diffDays = Math.floor((today - nav) / (1000 * 60 * 60 * 24))
+
+  if (diffDays <= 3) return '#67c23a' // 绿色：3天内
+  if (diffDays <= 7) return '#e6a23c' // 橙色：7天内
+  return '#f56c6c' // 红色：超过7天
 }
 
 // 样式类
@@ -812,6 +1088,183 @@ const getStrategyTagType = (strategy) => {
     '尾部对冲': 'warning'
   }
   return typeMap[strategy] || ''
+}
+
+// 清单管理 - 处理下拉菜单命令
+const handleListCommand = (command) => {
+  if (command === 'save') {
+    if (selectedProducts.value.length === 0) {
+      ElMessage.warning('请先选择要保存的产品')
+      return
+    }
+    saveListForm.name = ''
+    saveListForm.description = ''
+    saveListDialogVisible.value = true
+  } else if (command === 'load') {
+    loadProductLists()
+    loadListDialogVisible.value = true
+  } else if (command === 'manage') {
+    loadProductLists()
+    manageListDialogVisible.value = true
+  }
+}
+
+// 格式化日期时间
+const formatDateTime = (dateStr) => {
+  if (!dateStr) return '-'
+  const date = new Date(dateStr)
+  return date.toLocaleString('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit'
+  })
+}
+
+// 加载所有产品清单
+const loadProductLists = async () => {
+  try {
+    loadListLoading.value = true
+    const response = await axios.get(`${API_BASE}/api/product-lists/`)
+    productLists.value = response.data
+  } catch (error) {
+    console.error('加载产品清单失败:', error)
+    ElMessage.error('加载产品清单失败')
+  } finally {
+    loadListLoading.value = false
+  }
+}
+
+// 处理清单展开/收起
+const handleListExpand = (row, expandedRows) => {
+  expandedListIds.value = expandedRows.map(r => r.id)
+}
+
+// 保存产品清单
+const saveProductList = async () => {
+  if (!saveListForm.name.trim()) {
+    ElMessage.warning('请输入清单名称')
+    return
+  }
+
+  try {
+    saveListLoading.value = true
+    const fundCodes = selectedProducts.value.map(p => p.fund_code)
+
+    await axios.post(`${API_BASE}/api/product-lists/`, {
+      name: saveListForm.name,
+      description: saveListForm.description,
+      fund_codes: fundCodes
+    })
+
+    ElMessage.success('清单保存成功')
+    saveListDialogVisible.value = false
+  } catch (error) {
+    console.error('保存清单失败:', error)
+    ElMessage.error('保存清单失败')
+  } finally {
+    saveListLoading.value = false
+  }
+}
+
+// 加载清单（点击行时触发）
+const handleLoadList = async (row) => {
+  try {
+    // 保存当前加载的清单
+    currentLoadedList.value = row
+
+    // 根据清单中的基金代码筛选表格数据
+    const fundCodes = new Set(row.items.map(item => item.fund_code))
+
+    // 清空当前选择
+    selectedProducts.value = []
+
+    // 筛选出清单中的产品
+    const listProducts = tableData.value.filter(product => fundCodes.has(product.fund_code))
+
+    // 设置为选中状态
+    selectedProducts.value = listProducts
+
+    // 重置分页到第一页
+    pagination.page = 1
+
+    ElMessage.success(`已加载清单"${row.name}"，共 ${listProducts.length} 个产品`)
+    loadListDialogVisible.value = false
+  } catch (error) {
+    console.error('加载清单失败:', error)
+    ElMessage.error('加载清单失败')
+  }
+}
+
+// 清除当前加载的清单
+const clearLoadedList = () => {
+  currentLoadedList.value = null
+  selectedProducts.value = []
+  pagination.page = 1
+  ElMessage.info('已清除清单过滤')
+}
+
+// 编辑清单
+const handleEditList = (row) => {
+  editListForm.id = row.id
+  editListForm.name = row.name
+  editListForm.description = row.description || ''
+  editListForm.selectedFundCodes = row.items.map(item => item.fund_code)
+
+  loadListDialogVisible.value = false
+  editListDialogVisible.value = true
+}
+
+// 更新清单
+const updateProductList = async () => {
+  if (!editListForm.name.trim()) {
+    ElMessage.warning('请输入清单名称')
+    return
+  }
+
+  try {
+    saveListLoading.value = true
+
+    await axios.put(`${API_BASE}/api/product-lists/${editListForm.id}`, {
+      name: editListForm.name,
+      description: editListForm.description,
+      fund_codes: editListForm.selectedFundCodes
+    })
+
+    ElMessage.success('清单更新成功')
+    editListDialogVisible.value = false
+
+    // 重新加载清单列表
+    await loadProductLists()
+  } catch (error) {
+    console.error('更新清单失败:', error)
+    ElMessage.error('更新清单失败')
+  } finally {
+    saveListLoading.value = false
+  }
+}
+
+// 删除清单
+const deleteProductList = async (listId) => {
+  try {
+    await ElMessageBox.confirm('确定要删除这个清单吗？', '提示', {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      type: 'warning'
+    })
+
+    await axios.delete(`${API_BASE}/api/product-lists/${listId}`)
+    ElMessage.success('清单删除成功')
+
+    // 重新加载清单列表
+    await loadProductLists()
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.error('删除清单失败:', error)
+      ElMessage.error('删除清单失败')
+    }
+  }
 }
 
 // 生命周期

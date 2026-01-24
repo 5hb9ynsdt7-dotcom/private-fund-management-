@@ -223,6 +223,28 @@ def add_product_features(engine):
         raise
 
 
+def add_nav_adjusted_accum_nav(engine):
+    """为Nav表添加adjusted_accum_nav字段（复权累计净值）"""
+    logger.info("检查 nav.adjusted_accum_nav 字段...")
+
+    try:
+        with engine.connect() as conn:
+            if check_column_exists(engine, 'nav', 'adjusted_accum_nav'):
+                logger.info("✓ nav.adjusted_accum_nav 字段已存在")
+                return
+
+            logger.info("添加 nav.adjusted_accum_nav 字段...")
+            conn.execute(text("""
+                ALTER TABLE nav
+                ADD COLUMN adjusted_accum_nav DECIMAL(16, 6)
+            """))
+            conn.commit()
+            logger.info("✓ nav.adjusted_accum_nav 字段添加成功")
+    except Exception as e:
+        logger.error(f"添加 nav.adjusted_accum_nav 字段失败: {e}")
+        raise
+
+
 def run_migrations():
     """
     执行所有数据库迁移
@@ -244,6 +266,7 @@ def run_migrations():
         create_weekly_excess_cache_table(engine)  # 新增：创建周度超额缓存表
         add_fund_schedule_fee_structure(engine)  # 新增：添加费用结构字段
         add_product_features(engine)  # 新增：添加产品特征字段
+        add_nav_adjusted_accum_nav(engine)  # 新增：添加复权累计净值字段
 
         logger.info("=" * 60)
         logger.info("✓ 所有数据库迁移完成")

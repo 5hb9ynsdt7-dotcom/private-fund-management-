@@ -73,43 +73,18 @@
         @selection-change="handleSelectionChange"
       >
         <el-table-column type="selection" width="55" />
-        <el-table-column prop="fund_code" label="基金代码" width="120" />
+        <el-table-column prop="fund_code" label="基金代码" width="84" />
         <el-table-column prop="fund_name" label="基金简称" width="240">
           <template #default="{ row }">
             {{ getFundShortName(row.fund_name) }}
           </template>
         </el-table-column>
-        <el-table-column prop="main_strategy" label="大类策略" width="120">
-          <template #default="{ row }">
-            <el-select
-              v-model="row.main_strategy"
-              placeholder="选择大类策略"
-              size="small"
-              style="width: 100px"
-              @change="() => handleStrategyChange(row)"
-            >
-              <el-option label="成长配置" value="成长配置" />
-              <el-option label="底仓配置" value="底仓配置" />
-              <el-option label="尾部对冲" value="尾部对冲" />
-            </el-select>
-          </template>
-        </el-table-column>
-        <el-table-column prop="sub_strategy" label="细分策略" width="120">
-          <template #default="{ row }">
-            <el-input
-              v-model="row.sub_strategy"
-              placeholder="输入细分策略"
-              size="small"
-              style="width: 100px"
-              @blur="() => handleStrategyChange(row)"
-              @keyup.enter="() => handleStrategyChange(row)"
-            />
-          </template>
-        </el-table-column>
-        <el-table-column prop="subscription_rule" label="申购规则" min-width="180" />
+        <el-table-column prop="main_strategy" label="大类策略" width="120" align="center" />
+        <el-table-column prop="sub_strategy" label="细分策略" width="120" align="center" />
+        <el-table-column prop="subscription_rule" label="申购规则" min-width="252" />
         <el-table-column prop="redemption_rule" label="赎回规则" min-width="180" />
         <el-table-column prop="lock_period" label="锁定期" width="120" />
-        <el-table-column label="费用" width="180">
+        <el-table-column label="费用" width="144" align="center">
           <template #default="scope">
             <el-button
               type="primary"
@@ -192,6 +167,23 @@
             <el-input
               v-model="ruleForm.fund_name"
               placeholder="例如：盛景私募证券投资基金"
+            />
+          </el-form-item>
+          <el-form-item label="大类策略">
+            <el-select
+              v-model="ruleForm.main_strategy"
+              placeholder="选择大类策略"
+              style="width: 100%"
+            >
+              <el-option label="成长配置" value="成长配置" />
+              <el-option label="底仓配置" value="底仓配置" />
+              <el-option label="尾部对冲" value="尾部对冲" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="细分策略">
+            <el-input
+              v-model="ruleForm.sub_strategy"
+              placeholder="例如：主观多头、量化多头等"
             />
           </el-form-item>
         </template>
@@ -759,7 +751,9 @@ const ruleForm = ref({
   subscription_rule: '',
   redemption_rule: '',
   lock_period: '',
-  fee_structure: ''
+  fee_structure: '',
+  main_strategy: '',
+  sub_strategy: ''
 })
 
 // 初始化当前月份
@@ -877,6 +871,20 @@ async function saveRule() {
   try {
     const response = await axios.post(`${API_BASE}/api/fund-schedules/rules`, ruleForm.value)
     if (response.data.success) {
+      // 如果提供了策略信息，保存策略
+      if (ruleForm.value.main_strategy || ruleForm.value.sub_strategy) {
+        try {
+          await axios.post(`${API_BASE}/api/strategy`, {
+            fund_code: ruleForm.value.fund_code,
+            main_strategy: ruleForm.value.main_strategy,
+            sub_strategy: ruleForm.value.sub_strategy
+          })
+        } catch (strategyError) {
+          console.error('保存策略失败:', strategyError)
+          // 策略保存失败不影响档期规则保存
+        }
+      }
+
       ElMessage.success(response.data.message)
       dialogVisible.value = false
       loadScheduleRules()
@@ -895,7 +903,9 @@ function resetForm() {
     subscription_rule: '',
     redemption_rule: '',
     lock_period: '',
-    fee_structure: ''
+    fee_structure: '',
+    main_strategy: '',
+    sub_strategy: ''
   }
 }
 
@@ -1081,6 +1091,52 @@ function nextMonth() {
   const date = new Date(year, month, 1)
   selectedMonth.value = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
   loadCalendarData()
+}
+
+// 处理产品名称变更
+async function handleFundNameChange(row, newShortName) {
+  // 检查产品名称是否为空
+  if (!newShortName || newShortName.trim() === '') {
+    ElMessage.warning('产品名称不能为空')
+    loadScheduleRules() // 重新加载数据恢复原值
+    return
+  }
+
+  // 如果简称没有变化，不需要更新
+  const currentShortName = getFundShortName(row.fund_name)
+  if (newShortName === currentShortName) {
+    return
+  }
+
+  // 构建完整的基金名称
+  // 保留原有的"龙舟-"前缀和"私募证券投资基金"后缀
+  let fullName = newShortName
+
+  // 如果原名称有"龙舟-"前缀，保留它
+  if (row.fund_name && row.fund_name.startsWith('龙舟-')) {
+    fullName = '龙舟-' + newShortName
+  }
+
+  // 如果原名称有"私募证券投资基金"，添加它
+  if (row.fund_name && row.fund_name.includes('私募证券投资基金')) {
+    fullName = fullName + '私募证券投资基金'
+  }
+
+  try {
+    const response = await axios.patch(
+      `${API_BASE}/api/funds/${row.fund_code}/fund-name`,
+      { fund_name: fullName }
+    )
+
+    if (response.data.success) {
+      ElMessage.success('产品名称更新成功')
+      loadScheduleRules() // 重新加载数据
+    }
+  } catch (error) {
+    console.error('更新产品名称失败:', error)
+    ElMessage.error(error.response?.data?.detail || '更新产品名称失败')
+    loadScheduleRules() // 重新加载数据恢复原值
+  }
 }
 
 // 处理策略变更
