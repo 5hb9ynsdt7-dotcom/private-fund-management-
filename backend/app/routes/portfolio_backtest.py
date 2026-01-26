@@ -40,7 +40,8 @@ class BacktestRequest(BaseModel):
     initial_capital: float  # 初始资金（万元）
     start_date: str  # 开始日期 YYYY-MM-DD
     end_date: str  # 结束日期 YYYY-MM-DD
-    benchmark: Optional[str] = None  # 对比基准
+    benchmark: Optional[str] = None  # 对比基准（指数代码）
+    benchmark_product: Optional[str] = None  # 对比基准（产品代码）
     rebalance_frequency: str = "quarterly"  # 调仓频率: none, monthly, quarterly, semiannual, annual
     reinvest_dividend: bool = True  # 是否分红再投资
     consider_fees: bool = True  # 是否考虑费用
@@ -95,6 +96,7 @@ async def run_backtest(
             start_date=request.start_date,
             end_date=request.end_date,
             benchmark=request.benchmark,
+            benchmark_product=request.benchmark_product,
             rebalance_frequency=request.rebalance_frequency,
             reinvest_dividend=request.reinvest_dividend,
             consider_fees=request.consider_fees,
@@ -176,6 +178,7 @@ async def save_portfolio(
                 start_date=start_date,
                 end_date=end_date,
                 benchmark=None,
+                benchmark_product=None,
                 rebalance_frequency=request.rebalance_frequency,
                 reinvest_dividend=request.reinvest_dividend,
                 consider_fees=request.consider_fees,

@@ -197,14 +197,42 @@
                 />
               </el-form-item>
 
-              <el-form-item label="对比基准">
+              <el-form-item label="对比基准类型">
+                <el-radio-group v-model="benchmarkType" @change="handleBenchmarkTypeChange">
+                  <el-radio value="none">无</el-radio>
+                  <el-radio value="index">指数</el-radio>
+                  <el-radio value="product">产品</el-radio>
+                </el-radio-group>
+              </el-form-item>
+
+              <el-form-item v-if="benchmarkType === 'index'" label="选择指数">
                 <el-select v-model="backtestParams.benchmark" placeholder="选择基准指数" style="width: 100%" clearable>
-                  <el-option label="无" value="" />
                   <el-option label="沪深300" value="000300" />
                   <el-option label="中证500" value="000905" />
                   <el-option label="上证指数" value="000001" />
                   <el-option label="创业板指" value="399006" />
                   <el-option label="恒生指数" value="HSI" />
+                </el-select>
+              </el-form-item>
+
+              <el-form-item v-if="benchmarkType === 'product'" label="选择产品">
+                <el-select
+                  v-model="backtestParams.benchmarkProduct"
+                  filterable
+                  remote
+                  reserve-keyword
+                  placeholder="输入基金代码或名称搜索"
+                  :remote-method="searchBenchmarkProducts"
+                  :loading="benchmarkProductSearchLoading"
+                  style="width: 100%"
+                  clearable
+                >
+                  <el-option
+                    v-for="fund in benchmarkProductList"
+                    :key="fund.fund_code"
+                    :label="`${fund.fund_code} - ${fund.fund_name}`"
+                    :value="fund.fund_code"
+                  />
                 </el-select>
               </el-form-item>
             </el-form>
@@ -757,6 +785,11 @@ const fundList = ref([])
 const fundSearchLoading = ref(false)
 const selectedFundCode = ref('')
 
+// 对比基准相关
+const benchmarkType = ref('none') // 'none', 'index', 'product'
+const benchmarkProductList = ref([])
+const benchmarkProductSearchLoading = ref(false)
+
 // 组合构建
 const portfolioItems = ref([])
 const weightMode = ref('weight') // 'weight' 或 'amount'
@@ -771,7 +804,8 @@ const backtestParams = ref({
   startDate: null,
   endDate: null,
   dateRange: null, // 保留用于兼容
-  benchmark: '', // 对比基准
+  benchmark: '', // 对比基准（指数代码）
+  benchmarkProduct: '', // 对比基准（产品代码）
   rebalanceFrequency: 'none', // 默认不调仓
   reinvestDividend: false, // 默认不分红再投资
   considerFees: false // 默认不考虑费用
@@ -814,6 +848,37 @@ async function searchFunds(query) {
   } finally {
     fundSearchLoading.value = false
   }
+}
+
+// 搜索基准产品
+async function searchBenchmarkProducts(query) {
+  if (!query || query.trim().length < 1) {
+    benchmarkProductList.value = []
+    return
+  }
+
+  benchmarkProductSearchLoading.value = true
+  try {
+    const response = await axios.get(`${API_BASE}/api/nav/funds`, {
+      params: { search: query }
+    })
+    if (response.data.success) {
+      benchmarkProductList.value = response.data.data.funds || []
+    }
+  } catch (error) {
+    console.error('搜索基准产品失败:', error)
+    ElMessage.error('搜索基准产品失败')
+  } finally {
+    benchmarkProductSearchLoading.value = false
+  }
+}
+
+// 处理基准类型变化
+function handleBenchmarkTypeChange(type) {
+  // 清空之前的选择
+  backtestParams.value.benchmark = ''
+  backtestParams.value.benchmarkProduct = ''
+  benchmarkProductList.value = []
 }
 
 // 添加基金到组合
@@ -932,7 +997,8 @@ async function runBacktest() {
       initial_capital: backtestParams.value.initialCapital,
       start_date: backtestParams.value.startDate,
       end_date: backtestParams.value.endDate,
-      benchmark: backtestParams.value.benchmark || null,
+      benchmark: benchmarkType.value === 'index' ? backtestParams.value.benchmark : null,
+      benchmark_product: benchmarkType.value === 'product' ? backtestParams.value.benchmarkProduct : null,
       rebalance_frequency: backtestParams.value.rebalanceFrequency,
       reinvest_dividend: backtestParams.value.reinvestDividend,
       consider_fees: backtestParams.value.considerFees,
