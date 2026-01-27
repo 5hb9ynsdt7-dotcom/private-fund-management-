@@ -567,16 +567,16 @@ class QuantitativeService:
     ) -> Dict[str, Any]:
         """
         计算区间超额收益
-        使用单位净值，并在除息日使用除权前净值进行调整
-        支持区间内多个分红日的情况，使用逐日复利方式累计收益，确保准确反映分红对收益的影响
+        优先使用复权累计净值（adjusted_accum_nav），自动考虑分红影响
+        如果没有复权累计净值，则使用单位净值并进行分红调整
         """
-        # 获取分红数据
+        # 获取分红数据（用于回退逻辑）
         dividends = self._get_dividends_for_fund(fund_code) if fund_code else {}
 
-        # 转换为DataFrame（使用单位净值）
+        # 转换为DataFrame（优先使用复权累计净值）
         nav_df = pd.DataFrame([{
             "date": pd.to_datetime(nav.nav_date),
-            "nav": float(nav.unit_nav)
+            "nav": float(nav.adjusted_accum_nav) if nav.adjusted_accum_nav else float(nav.unit_nav)
         } for nav in nav_data])
 
         index_df = pd.DataFrame(index_data)
@@ -596,101 +596,35 @@ class QuantitativeService:
         if start_data is None or end_data is None:
             return {}
 
-        # 获取区间内所有净值日期(用于分段计算考虑所有分红)
-        period_nav_dates = nav_df[
-            (nav_df['date'] >= start_data['date']) &
-            (nav_df['date'] <= end_data['date'])
-        ]['date'].tolist()
+        # 使用复权累计净值，直接计算收益，不需要复杂的分红调整
+        # 计算产品收益率
+        product_return = ((end_data['nav'] / start_data['nav']) - 1) * 100
 
-        if len(period_nav_dates) == 0:
-            return {}
+        # 计算指数收益率
+        index_return = ((end_data['index'] / start_data['index']) - 1) * 100
 
-        # 使用逐日复利方式计算区间收益(考虑所有分红日)
-        compound_factor_product = 1.0
-        compound_factor_index = 1.0
-
-        prev_nav = start_data['nav']
-        prev_index = start_data['index']
-
-        # 记录起始日期，用于判断是否跳过起始日的分红调整
-        start_date_ts = start_data['date']
-
-        for i, current_date in enumerate(period_nav_dates):
-            # 获取当前日期的数据
-            current_data = self._align_data_by_date(nav_df, index_df, current_date, 'backward')
-
-            if current_data is None:
-                continue
-
-            # 分红调整：如果current_date是除息日，使用除权前净值
-            # 但跳过起始日（第一个净值日）的分红调整，避免在同一天进出导致虚假收益
-            if i == 0:
-                # 起始日不进行分红调整，使用除权后的净值
-                adjusted_nav = current_data['nav']
-            else:
-                # 期间内的其他日期进行分红调整
-                adjusted_nav = self._adjust_nav_for_dividend(
-                    current_data['nav'],
-                    current_date,
-                    fund_code,
-                    dividends
-                )
-
-            # 计算当期收益率（使用调整后的净值）
-            nav_return = (adjusted_nav / prev_nav - 1)
-            index_return = (current_data['index'] / prev_index - 1)
-
-            # 复利累计
-            compound_factor_product *= (1 + nav_return)
-            compound_factor_index *= (1 + index_return)
-
-            # 更新为下一期的期初（使用除权后的净值，即数据库中的实际净值）
-            prev_nav = current_data['nav']
-            prev_index = current_data['index']
-
-        # 计算总收益
-        product_return = (compound_factor_product - 1) * 100
-        index_return = (compound_factor_index - 1) * 100
+        # 计算超额收益
         excess_return = product_return - index_return
 
         # 筛选区间内的数据来计算回撤
         period_nav = nav_df[(nav_df['date'] >= start_data['date']) & (nav_df['date'] <= end_data['date'])]
         period_index = index_df[(index_df['date'] >= start_data['date']) & (index_df['date'] <= end_data['date'])]
 
-        # 合并计算超额曲线（需要考虑分红调整）
+        # 合并计算超额曲线
         merged = pd.merge(period_nav, period_index, on='date', how='inner')
 
         if len(merged) < 2:
             max_drawdown = 0
         else:
-            # 计算考虑分红调整的累计收益曲线
-            # 起始日（第一行）不进行分红调整，避免虚假收益
-            merged['nav_adjusted'] = merged['nav']  # 默认使用原始净值
+            # 使用复权累计净值计算累计收益曲线（不需要分红调整）
+            merged['nav_cum_return'] = merged['nav'] / merged['nav'].iloc[0]
+            merged['index_cum_return'] = merged['value'] / merged['value'].iloc[0]
+            merged['excess'] = (merged['nav_cum_return'] - merged['index_cum_return']) * 100
 
-            # 只对第二行及之后的数据进行分红调整
-            for idx in range(1, len(merged)):
-                adjusted_nav = self._adjust_nav_for_dividend(
-                    merged.iloc[idx]['nav'],
-                    merged.iloc[idx]['date'],
-                    fund_code,
-                    dividends
-                )
-                merged.iloc[idx, merged.columns.get_loc('nav_adjusted')] = adjusted_nav
-
-            # 计算累计收益（使用调整后的净值，但复利时使用除权后净值）
-            merged['nav_cum_return'] = 1.0
-            merged['index_cum_return'] = 1.0
-
-            for i in range(1, len(merged)):
-                # 使用调整后的净值计算当期收益
-                nav_period_return = merged.iloc[i]['nav_adjusted'] / merged.iloc[i-1]['nav']
-                index_period_return = merged.iloc[i]['value'] / merged.iloc[i-1]['value']
-
-                # 复利累计
-                merged.iloc[i, merged.columns.get_loc('nav_cum_return')] = \
-                    merged.iloc[i-1]['nav_cum_return'] * nav_period_return
-                merged.iloc[i, merged.columns.get_loc('index_cum_return')] = \
-                    merged.iloc[i-1]['index_cum_return'] * index_period_return
+            # 计算最大回撤
+            merged['nav_cummax'] = merged['nav_cum_return'].cummax()
+            merged['drawdown'] = (merged['nav_cum_return'] / merged['nav_cummax'] - 1) * 100
+            max_drawdown = merged['drawdown'].min()
 
             # 计算超额曲线
             merged['excess_curve'] = merged['nav_cum_return'] / merged['index_cum_return']
