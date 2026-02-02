@@ -168,8 +168,16 @@
           <template #default="{ row }">{{ formatNumber(row.nav, 4) }}</template>
         </el-table-column>
         <el-table-column prop="note" label="备注" min-width="150" />
-        <el-table-column label="操作" width="80" align="center" fixed="right">
+        <el-table-column label="操作" width="140" align="center" fixed="right">
           <template #default="{ row }">
+            <el-button
+              type="primary"
+              size="small"
+              text
+              @click="handleEditTransaction(row)"
+            >
+              编辑
+            </el-button>
             <el-button
               type="danger"
               size="small"
@@ -183,15 +191,15 @@
       </el-table>
     </el-dialog>
 
-    <!-- 添加交易对话框 -->
-    <el-dialog v-model="showTransactionDialog" title="添加交易" width="600px" @open="loadFundList">
+    <!-- 添加/编辑交易对话框 -->
+    <el-dialog v-model="showTransactionDialog" :title="editingTransaction ? '编辑交易' : '添加交易'" width="600px" @open="loadFundList">
       <el-alert
-        title="提示"
+        :title="portfolio.portfolio_type === 'private' ? '私募基金组合交易提示' : '公募基金组合交易提示'"
         type="info"
         :closable="false"
         style="margin-bottom: 20px;"
       >
-        系统将自动从公募基金净值数据中获取交易净值，并自动计算份额。请确保已在公募基金库中添加并抓取了该基金的净值。
+        系统将自动从{{ portfolio.portfolio_type === 'private' ? '私募' : '公募' }}基金净值数据中获取交易净值，并自动计算份额。请确保已在{{ portfolio.portfolio_type === 'private' ? '私募基金净值管理' : '公募基金库' }}中添加并{{portfolio.portfolio_type === 'private' ? '录入了' : '抓取了' }}该基金的净值。
       </el-alert>
 
       <el-form :model="transactionForm" label-width="100px">
@@ -288,9 +296,9 @@
       </el-form>
 
       <template #footer>
-        <el-button @click="showTransactionDialog = false">取消</el-button>
+        <el-button @click="handleCancelTransaction">取消</el-button>
         <el-button type="primary" :loading="addingTransaction" @click="handleAddTransaction">
-          确定
+          {{ editingTransaction ? '保存' : '确定' }}
         </el-button>
       </template>
     </el-dialog>
@@ -304,6 +312,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, ArrowLeft, Edit } from '@element-plus/icons-vue'
 import portfolioAPI from '@/api/portfolio'
 import publicFundAPI from '@/api/publicFund'
+import { navAPI } from '@/api/nav'  // 使用命名导入
 import * as echarts from 'echarts'
 
 const route = useRoute()
@@ -318,6 +327,7 @@ const navHistory = ref([])
 const fundList = ref([])
 
 const showTransactionDialog = ref(false)
+const editingTransaction = ref(null)  // 正在编辑的交易记录
 const transactionForm = ref({
   transaction_type: 'buy',
   fund_code: '',
@@ -375,8 +385,15 @@ const handleSaveNameconfirm = () => {
 // 加载基金列表
 const loadFundList = async () => {
   try {
-    const response = await publicFundAPI.getFundList({ page_size: 1000 })
-    fundList.value = response.data
+    if (portfolio.value.portfolio_type === 'public') {
+      // 加载公募基金列表
+      const response = await publicFundAPI.getFundList({ page_size: 1000 })
+      fundList.value = response.data
+    } else {
+      // 加载私募基金列表（从私募基金净值接口）
+      const response = await navAPI.getFundsWithNav()
+      fundList.value = response.data.funds
+    }
   } catch (error) {
     console.error('加载基金列表失败:', error)
   }
@@ -402,7 +419,38 @@ const loadPortfolioDetail = async () => {
   }
 }
 
-// 添加交易
+// 编辑交易
+const handleEditTransaction = (transaction) => {
+  editingTransaction.value = transaction
+  transactionForm.value = {
+    transaction_type: transaction.transaction_type,
+    fund_code: transaction.fund_code,
+    transaction_date: transaction.transaction_date,
+    amount: parseFloat(transaction.amount),
+    shares: parseFloat(transaction.shares),
+    fee: parseFloat(transaction.fee || 0),
+    note: transaction.note || ''
+  }
+  showTransactionDialog.value = true
+}
+
+// 取消添加/编辑交易
+const handleCancelTransaction = () => {
+  showTransactionDialog.value = false
+  editingTransaction.value = null
+  // 重置表单
+  transactionForm.value = {
+    transaction_type: 'buy',
+    fund_code: '',
+    transaction_date: new Date().toISOString().split('T')[0],
+    amount: 0,
+    shares: 0,
+    fee: 0,
+    note: ''
+  }
+}
+
+// 添加/更新交易
 const handleAddTransaction = async () => {
   if (!transactionForm.value.fund_code) {
     ElMessage.warning('请选择基金')
@@ -431,8 +479,17 @@ const handleAddTransaction = async () => {
 
   addingTransaction.value = true
   try {
-    await portfolioAPI.addTransaction(route.params.id, transactionForm.value)
-    ElMessage.success('添加成功，系统已自动获取净值并计算份额')
+    if (editingTransaction.value) {
+      // 编辑模式：先删除旧记录，再添加新记录
+      await portfolioAPI.deleteTransaction(route.params.id, editingTransaction.value.id)
+      await portfolioAPI.addTransaction(route.params.id, transactionForm.value)
+      ElMessage.success('修改成功')
+    } else {
+      // 新增模式
+      await portfolioAPI.addTransaction(route.params.id, transactionForm.value)
+      ElMessage.success('添加成功，系统已自动获取净值并计算份额')
+    }
+
     showTransactionDialog.value = false
 
     // 重置表单
@@ -445,12 +502,13 @@ const handleAddTransaction = async () => {
       fee: 0,
       note: ''
     }
+    editingTransaction.value = null
 
     // 重新加载数据
     await loadPortfolioDetail()
   } catch (error) {
-    console.error('添加交易失败:', error)
-    ElMessage.error(error.response?.data?.detail || '添加交易失败')
+    console.error('操作失败:', error)
+    ElMessage.error(error.response?.data?.detail || (editingTransaction.value ? '修改交易失败' : '添加交易失败'))
   } finally {
     addingTransaction.value = false
   }

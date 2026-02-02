@@ -18,6 +18,8 @@ class PublicFundPortfolio(Base):
     initial_amount = Column(Numeric(15, 2), nullable=False, default=0, comment="初始投入金额")
     cash_balance = Column(Numeric(15, 2), nullable=False, default=0, comment="当前现金余额")
     is_active = Column(Boolean, nullable=False, default=True, comment="是否激活")
+    portfolio_type = Column(String(20), nullable=False, default='public', comment="组合类型: public/private")
+    update_frequency = Column(String(20), nullable=True, default='daily', comment="更新频率: daily/weekly/monthly")
     created_at = Column(DateTime, nullable=False, server_default=func.now(), comment="创建时间")
     updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now(), comment="更新时间")
 

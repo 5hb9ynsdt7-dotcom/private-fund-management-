@@ -75,7 +75,7 @@
 
           <el-menu-item index="/portfolio">
             <el-icon><TrendCharts /></el-icon>
-            <span>公募实盘</span>
+            <span>实盘交易</span>
           </el-menu-item>
 
           <el-menu-item index="/portfolio-backtest">

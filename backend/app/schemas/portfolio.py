@@ -15,6 +15,8 @@ class PortfolioBase(BaseModel):
     """组合基础模型"""
     portfolio_name: str = Field(..., description="组合名称")
     description: Optional[str] = Field(None, description="组合描述")
+    portfolio_type: Optional[str] = Field('public', description="组合类型: public/private")
+    update_frequency: Optional[str] = Field('daily', description="更新频率: daily/weekly/monthly")
 
 
 class PortfolioCreate(PortfolioBase):
@@ -37,6 +39,8 @@ class PortfolioResponse(BaseModel):
     description: Optional[str] = None
     cash_balance: Decimal
     is_active: bool
+    portfolio_type: Optional[str] = Field('public', description="组合类型: public/private")
+    update_frequency: Optional[str] = Field('daily', description="更新频率: daily/weekly/monthly")
     created_at: datetime
     updated_at: datetime
 

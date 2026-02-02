@@ -15,9 +15,14 @@
         <div class="card-content" @click="goToDetail(portfolio.id)">
           <div class="card-header">
             <h3>{{ portfolio.portfolio_name }}</h3>
-            <el-tag :type="portfolio.is_active ? 'success' : 'info'" size="small">
-              {{ portfolio.is_active ? '激活' : '未激活' }}
-            </el-tag>
+            <div style="display: flex; gap: 4px;">
+              <el-tag :type="portfolio.portfolio_type === 'private' ? 'warning' : 'primary'" size="small">
+                {{ portfolio.portfolio_type === 'private' ? '私募' : '公募' }}
+              </el-tag>
+              <el-tag :type="portfolio.is_active ? 'success' : 'info'" size="small">
+                {{ portfolio.is_active ? '激活' : '未激活' }}
+              </el-tag>
+            </div>
           </div>
 
           <div class="card-stats">
@@ -57,6 +62,18 @@
       <el-form :model="createForm" label-width="100px">
         <el-form-item label="组合名称" required>
           <el-input v-model="createForm.portfolio_name" placeholder="请输入组合名称" />
+        </el-form-item>
+
+        <el-form-item label="组合类型" required>
+          <el-radio-group v-model="createForm.portfolio_type">
+            <el-radio label="public">公募基金组合</el-radio>
+            <el-radio label="private">私募基金组合</el-radio>
+          </el-radio-group>
+          <div style="color: #909399; font-size: 12px; margin-top: 4px;">
+            {{ createForm.portfolio_type === 'public'
+              ? '公募基金：从公募基金库选择产品，支持日更净值'
+              : '私募基金：从私募基金净值管理选择产品，按您的净值更新频率进行复盘' }}
+          </div>
         </el-form-item>
 
         <el-form-item label="组合描述">
@@ -102,7 +119,8 @@ const portfolios = ref([])
 const showCreateDialog = ref(false)
 const createForm = ref({
   portfolio_name: '',
-  description: ''
+  description: '',
+  portfolio_type: 'public'
 })
 
 // 加载组合列表
@@ -135,7 +153,8 @@ const handleCreate = async () => {
     // 重置表单
     createForm.value = {
       portfolio_name: '',
-      description: ''
+      description: '',
+      portfolio_type: 'public'
     }
 
     // 重新加载列表
