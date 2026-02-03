@@ -246,7 +246,7 @@
       v-model="chartDialogVisible"
       :title="chartDialogTitle"
       width="90%"
-      top="5vh"
+      top="2vh"
     >
       <div v-loading="chartLoading" class="chart-dialog-content">
         <!-- 图表类型切换按钮 -->
@@ -658,13 +658,15 @@ const handleCalculatePeriod = async () => {
 
     periodExcessData.value = Object.values(productMap)
 
-    // 保存计算结果到localStorage
+    // 保存计算结果到localStorage（key包含日期范围）
+    const dateKey = `${customDateRange.value[0]}_${customDateRange.value[1]}`
+    const cacheKey = `periodExcessCache_${dateKey}`
     const cacheData = {
       data: Object.values(productMap),
       timestamp: new Date().toISOString(),
       dateRange: customDateRange.value
     }
-    localStorage.setItem('periodExcessCache', JSON.stringify(cacheData))
+    localStorage.setItem(cacheKey, JSON.stringify(cacheData))
 
     ElMessage.success('区间超额收益计算完成')
   } catch (error) {
@@ -707,28 +709,26 @@ const showGroupChart = async (groupName, groupProducts, trackingIndexCode) => {
     // 获取该组所有产品的净值数据
     const fundCodes = groupProducts.map(p => p.fundCode)
 
-    // 获取净值数据
+    // 获取净值数据（使用复权累计净值）
     const navPromises = fundCodes.map(code =>
-      axios.get(`${API_BASE}/api/nav/list`, {
+      axios.get(`${API_BASE}/api/nav/fund/${code}/with-adjusted-nav`, {
         params: {
-          fund_code: code,
-          page_size: 1000,
-          sort_by: 'nav_date',
-          sort_order: 'asc'
+          limit: 10000
         }
       })
     )
     const navResponses = await Promise.all(navPromises)
 
-    // 提取净值记录数组（API返回格式：{ nav_records: [...] }）
+    // 提取复权累计净值数据
     const navDataArrays = navResponses.map((response, idx) => {
-      if (response.data && response.data.nav_records) {
-        // 转换字段名：nav_date -> date, unit_nav -> value，并确保value是数字类型
-        const navData = response.data.nav_records.map(record => ({
+      if (response.data && response.data.data && response.data.data.nav_records) {
+        // 使用复权累计净值：adjusted_accum_nav
+        const navData = response.data.data.nav_records.map(record => ({
           date: record.nav_date,
-          value: parseFloat(record.unit_nav)  // 转换为数字
+          value: parseFloat(record.adjusted_accum_nav)
         }))
-        return navData
+        // 按日期升序排序（从早到晚）
+        return navData.sort((a, b) => a.date.localeCompare(b.date))
       }
       return []
     })
@@ -960,18 +960,19 @@ const drawGroupCharts = (products, navDataArrays, indexData, trackingIndexCode, 
     grid: {
       left: '3%',
       right: '4%',
-      bottom: '80px',  // 为 dataZoom 留出空间
+      bottom: '50px',
+      top: '60px',
       containLabel: true
     },
     dataZoom: [
       {
-        type: 'slider',  // 滑块式缩放
+        type: 'slider',
         show: true,
         xAxisIndex: [0],
-        start: 0,  // 默认显示全部数据
+        start: 0,
         end: 100,
-        height: 25,
-        bottom: 10,
+        height: 20,
+        bottom: 5,
         borderColor: '#ddd',
         fillerColor: 'rgba(64, 158, 255, 0.15)',
         handleStyle: {
@@ -1028,7 +1029,8 @@ const drawGroupCharts = (products, navDataArrays, indexData, trackingIndexCode, 
     grid: {
       left: '3%',
       right: '4%',
-      bottom: '80px',
+      bottom: '50px',
+      top: '60px',
       containLabel: true
     },
     dataZoom: [
@@ -1038,8 +1040,8 @@ const drawGroupCharts = (products, navDataArrays, indexData, trackingIndexCode, 
         xAxisIndex: [0],
         start: 0,
         end: 100,
-        height: 25,
-        bottom: 10,
+        height: 20,
+        bottom: 5,
         borderColor: '#ddd',
         fillerColor: 'rgba(64, 158, 255, 0.15)',
         handleStyle: {
@@ -1153,15 +1155,19 @@ const loadCachedResults = () => {
     }
   }
 
-  // 加载区间超额缓存
-  const periodCache = localStorage.getItem('periodExcessCache')
-  if (periodCache) {
-    try {
-      const cached = JSON.parse(periodCache)
-      periodExcessData.value = cached.data || []
-      console.log(`已加载区间超额缓存数据 (${cached.timestamp})`)
-    } catch (e) {
-      console.error('加载区间超额缓存失败:', e)
+  // 加载区间超额缓存（基于日期范围）
+  if (customDateRange.value && customDateRange.value.length === 2) {
+    const dateKey = `${customDateRange.value[0]}_${customDateRange.value[1]}`
+    const cacheKey = `periodExcessCache_${dateKey}`
+    const periodCache = localStorage.getItem(cacheKey)
+    if (periodCache) {
+      try {
+        const cached = JSON.parse(periodCache)
+        periodExcessData.value = cached.data || []
+        console.log(`已加载区间超额缓存数据 (${cached.timestamp}, 日期: ${cached.dateRange})`)
+      } catch (e) {
+        console.error('加载区间超额缓存失败:', e)
+      }
     }
   }
 }
@@ -1272,7 +1278,7 @@ onMounted(() => {
 
 /* 图表对话框样式 */
 .chart-dialog-content {
-  min-height: 600px;
+  min-height: 85vh;
 }
 
 .chart-type-selector {
@@ -1303,6 +1309,6 @@ onMounted(() => {
 
 .group-chart {
   width: 100%;
-  height: 500px;
+  height: 75vh;
 }
 </style>

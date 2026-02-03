@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import and_, desc, asc
 
-from ..models import Nav, Fund, DateConverter
+from ..models import Nav, Fund, DateConverter, Dividend
 from ..schemas.nav import NavManualCreate, NavUploadResponse
 
 logger = logging.getLogger(__name__)
@@ -21,13 +21,83 @@ logger = logging.getLogger(__name__)
 
 class NavService:
     """净值管理服务类"""
-    
+
     def __init__(self, db: Session):
         self.db = db
+
+    def calculate_adjusted_accum_nav(self, fund_code: str, target_date: date) -> Optional[Decimal]:
+        """
+        计算指定日期的复权累计净值
+        使用复利链条法：F_t = F_{t-1} × (NV_t + D_t) / NV_{t-1}
+
+        参数：
+            fund_code: 基金代码
+            target_date: 目标日期
+
+        返回：
+            复权累计净值（Decimal），如果无法计算则返回None
+        """
+        try:
+            # 获取该基金从最早到目标日期的所有净值记录（按日期升序）
+            nav_records = self.db.query(Nav).filter(
+                Nav.fund_code == fund_code,
+                Nav.nav_date <= target_date
+            ).order_by(Nav.nav_date.asc()).all()
+
+            if not nav_records:
+                return None
+
+            # 获取该基金的所有分红记录
+            dividends = self.db.query(Dividend).filter(
+                Dividend.fund_code == fund_code,
+                Dividend.ex_dividend_date <= target_date
+            ).order_by(Dividend.ex_dividend_date).all()
+
+            # 创建分红字典：{除息日期: 每份分红金额}
+            dividend_dict = {}
+            for div in dividends:
+                if div.ex_dividend_date and div.dividend_per_share:
+                    dividend_dict[div.ex_dividend_date] = float(div.dividend_per_share)
+
+            # 计算复权累计净值
+            prev_adjusted_nav = None
+            prev_unit_nav = None
+            adjusted_accum_nav = None
+
+            for i, nav in enumerate(nav_records):
+                current_unit_nav = float(nav.unit_nav)
+
+                if i == 0:
+                    # 第一个净值日：复权累计净值 = 单位净值
+                    adjusted_accum_nav = current_unit_nav
+                else:
+                    # 后续净值日：使用复利链条法计算
+                    # 检查当前日期是否有分红
+                    dividend_amount = dividend_dict.get(nav.nav_date, 0.0)
+
+                    # F_t = F_{t-1} × (NV_t + D_t) / NV_{t-1}
+                    if prev_unit_nav and prev_unit_nav > 0:
+                        adjusted_accum_nav = prev_adjusted_nav * (current_unit_nav + dividend_amount) / prev_unit_nav
+                    else:
+                        adjusted_accum_nav = current_unit_nav
+
+                # 如果是目标日期，返回结果
+                if nav.nav_date == target_date:
+                    return Decimal(str(round(adjusted_accum_nav, 4)))
+
+                # 更新前一日的值
+                prev_adjusted_nav = adjusted_accum_nav
+                prev_unit_nav = current_unit_nav
+
+            return None
+
+        except Exception as e:
+            logger.error(f"计算复权累计净值失败: fund_code={fund_code}, date={target_date}, error={str(e)}")
+            return None
     
     def create_or_update_nav(self, nav_data: NavManualCreate) -> Tuple[Nav, bool]:
         """
-        创建或更新净值记录
+        创建或更新净值记录，并自动计算复权累计净值
         返回: (净值记录, 是否为新创建)
         """
         try:
@@ -36,7 +106,7 @@ class NavService:
                 nav_date = DateConverter.convert_date_string(nav_data.nav_date)
             else:
                 nav_date = nav_data.nav_date
-            
+
             # 验证基金是否存在，如果不存在则创建
             fund = self.db.query(Fund).filter(Fund.fund_code == nav_data.fund_code).first()
             if not fund:
@@ -51,7 +121,7 @@ class NavService:
                 self.db.add(fund)
                 self.db.flush()  # 确保基金记录立即可用
                 logger.info(f"自动创建基金: {nav_data.fund_code} - {fund_name} (简称: {short_name})")
-            
+
             # 查找是否已存在相同记录
             existing_nav = self.db.query(Nav).filter(
                 and_(
@@ -59,16 +129,23 @@ class NavService:
                     Nav.nav_date == nav_date
                 )
             ).first()
-            
+
             if existing_nav:
                 # 更新现有记录
                 existing_nav.unit_nav = nav_data.unit_nav
                 existing_nav.accum_nav = nav_data.accum_nav
+                # 先提交以确保数据库中的数据是最新的
                 self.db.commit()
-                logger.info(f"更新净值记录: {nav_data.fund_code} - {nav_date}")
+
+                # 计算复权累计净值
+                adjusted_accum_nav = self.calculate_adjusted_accum_nav(nav_data.fund_code, nav_date)
+                existing_nav.adjusted_accum_nav = adjusted_accum_nav
+                self.db.commit()
+
+                logger.info(f"更新净值记录: {nav_data.fund_code} - {nav_date}, 复权累计净值: {adjusted_accum_nav}")
                 return existing_nav, False
             else:
-                # 创建新记录
+                # 创建新记录（先不设置adjusted_accum_nav）
                 new_nav = Nav(
                     fund_code=nav_data.fund_code,
                     nav_date=nav_date,
@@ -76,10 +153,17 @@ class NavService:
                     accum_nav=nav_data.accum_nav
                 )
                 self.db.add(new_nav)
+                # 先提交以确保记录在数据库中
                 self.db.commit()
-                logger.info(f"创建净值记录: {nav_data.fund_code} - {nav_date}")
+
+                # 现在计算复权累计净值
+                adjusted_accum_nav = self.calculate_adjusted_accum_nav(nav_data.fund_code, nav_date)
+                new_nav.adjusted_accum_nav = adjusted_accum_nav
+                self.db.commit()
+
+                logger.info(f"创建净值记录: {nav_data.fund_code} - {nav_date}, 复权累计净值: {adjusted_accum_nav}")
                 return new_nav, True
-                
+
         except Exception as e:
             self.db.rollback()
             logger.error(f"创建/更新净值记录失败: {str(e)}")

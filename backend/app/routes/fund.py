@@ -78,6 +78,11 @@ class UpdateProductFeaturesRequest(BaseModel):
     product_features: Optional[str] = None
 
 
+class UpdateFundNameRequest(BaseModel):
+    """更新产品名称请求模型"""
+    fund_name: str
+
+
 @router.patch("/{fund_code}/product-features", response_model=APIResponse, summary="更新产品特征")
 async def update_product_features(
     fund_code: str,
@@ -127,4 +132,56 @@ async def update_product_features(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"更新产品特征失败: {str(e)}"
+        )
+
+
+@router.patch("/{fund_code}/fund-name", response_model=APIResponse, summary="更新产品名称")
+async def update_fund_name(
+    fund_code: str,
+    request: UpdateFundNameRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    更新基金的产品名称
+
+    - **fund_code**: 基金代码
+    - **fund_name**: 产品名称
+
+    返回:
+        更新结果
+    """
+    try:
+        # 查找基金
+        fund = db.query(Fund).filter(Fund.fund_code == fund_code).first()
+
+        if not fund:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"基金 {fund_code} 不存在"
+            )
+
+        # 更新产品名称
+        fund.fund_name = request.fund_name
+        db.commit()
+        db.refresh(fund)
+
+        logger.info(f"更新基金 {fund_code} 的产品名称为: {request.fund_name}")
+
+        return APIResponse(
+            success=True,
+            message=f"成功更新基金 {fund_code} 的产品名称",
+            data={
+                'fund_code': fund_code,
+                'fund_name': fund.fund_name
+            }
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"更新产品名称失败: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"更新产品名称失败: {str(e)}"
         )

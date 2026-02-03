@@ -491,3 +491,212 @@ async def calculate_daily_returns(
     except Exception as e:
         logger.error(f"计算日收益率失败: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/stage-performance", summary="计算阶段涨幅")
+async def calculate_stage_performance(
+    request: dict,
+    db: Session = Depends(get_db)
+):
+    """
+    计算多个基金的阶段涨幅
+
+    请求参数:
+    - fund_codes: 基金代码列表
+    - start_date: 起始日期 (YYYY-MM-DD)
+    - end_date: 结束日期 (YYYY-MM-DD)
+    - benchmark: 基准指数代码（可选，如 000300.SH）
+
+    返回:
+    - 每个基金的阶段涨幅数据
+    """
+    try:
+        from ..models_public_fund import PublicFund, PublicFundNav
+        from ..models import IndexDaily
+        from sqlalchemy import and_, func
+
+        fund_codes = request.get('fund_codes', [])
+        start_date = request.get('start_date')
+        end_date = request.get('end_date')
+        benchmark = request.get('benchmark')
+
+        logger.info(f"计算阶段涨幅: fund_codes={fund_codes}, start_date={start_date}, end_date={end_date}, benchmark={benchmark}")
+
+        if not fund_codes:
+            raise HTTPException(status_code=400, detail="基金代码列表不能为空")
+
+        if not start_date or not end_date:
+            raise HTTPException(status_code=400, detail="起始日期和结束日期不能为空")
+
+        result_data = []
+        errors = []
+
+        for fund_code in fund_codes:
+            try:
+                # 获取公募基金信息
+                fund = db.query(PublicFund).filter(PublicFund.fund_code == fund_code).first()
+
+                if not fund:
+                    error_msg = f"基金代码 {fund_code} 不存在"
+                    logger.warning(error_msg)
+                    errors.append(error_msg)
+                    continue
+
+                # 获取结束日期的净值
+                end_nav = db.query(PublicFundNav).filter(
+                    and_(
+                        PublicFundNav.fund_code == fund_code,
+                        PublicFundNav.nav_date <= end_date
+                    )
+                ).order_by(PublicFundNav.nav_date.desc()).first()
+
+                if not end_nav:
+                    error_msg = f"基金 {fund_code} 在 {end_date} 之前没有净值数据"
+                    logger.warning(error_msg)
+                    errors.append(error_msg)
+                    continue
+
+                logger.info(f"基金 {fund_code} 结束日期净值: {end_nav.nav_date} = {end_nav.accum_nav}")
+
+                # 获取起始日期的净值
+                start_nav = db.query(PublicFundNav).filter(
+                    and_(
+                        PublicFundNav.fund_code == fund_code,
+                        PublicFundNav.nav_date <= start_date
+                    )
+                ).order_by(PublicFundNav.nav_date.desc()).first()
+
+                if not start_nav:
+                    error_msg = f"基金 {fund_code} 在 {start_date} 之前没有净值数据"
+                    logger.warning(error_msg)
+                    errors.append(error_msg)
+                    continue
+
+                logger.info(f"基金 {fund_code} 起始日期净值: {start_nav.nav_date} = {start_nav.accum_nav}")
+
+                # 计算阶段涨跌幅
+                stage_return = ((float(end_nav.accum_nav) - float(start_nav.accum_nav)) / float(start_nav.accum_nav)) * 100
+
+                # 获取今年1月1日的净值
+                current_year = datetime.now().year
+                year_start_date = f"{current_year}-01-01"
+
+                year_start_nav = db.query(PublicFundNav).filter(
+                    and_(
+                        PublicFundNav.fund_code == fund_code,
+                        PublicFundNav.nav_date <= year_start_date
+                    )
+                ).order_by(PublicFundNav.nav_date.desc()).first()
+
+                ytd_return = None
+                if year_start_nav:
+                    ytd_return = ((float(end_nav.accum_nav) - float(year_start_nav.accum_nav)) / float(year_start_nav.accum_nav)) * 100
+                    logger.info(f"基金 {fund_code} 今年以来涨跌幅: {ytd_return}%")
+
+                result_data.append({
+                    'fund_code': fund_code,
+                    'short_name': fund.fund_name,  # 公募基金没有short_name字段
+                    'nav_date': end_nav.nav_date.strftime('%Y-%m-%d'),
+                    'nav': float(end_nav.accum_nav),
+                    'stage_return': round(stage_return, 2),
+                    'ytd_return': round(ytd_return, 2) if ytd_return is not None else None,
+                    'compare_date': start_nav.nav_date.strftime('%Y-%m-%d'),
+                    'compare_nav': float(start_nav.accum_nav)
+                })
+
+                logger.info(f"基金 {fund_code} 计算成功: 阶段涨幅 {stage_return:.2f}%")
+
+            except Exception as e:
+                error_msg = f"基金 {fund_code} 计算失败: {str(e)}"
+                logger.error(error_msg, exc_info=True)
+                errors.append(error_msg)
+                continue
+
+        # 如果选择了基准指数，添加基准指数数据
+        if benchmark:
+            try:
+                # 指数代码映射
+                index_names = {
+                    '000300.SH': '沪深300',
+                    '000905.SH': '中证500',
+                    '000852.SH': '中证1000',
+                    '932000.CSI': '中证2000'
+                }
+
+                # 将日期格式转换为YYYYMMDD
+                start_date_str = start_date.replace('-', '')
+                end_date_str = end_date.replace('-', '')
+                year_start_str = f"{datetime.now().year}0101"
+
+                # 获取结束日期的指数点位
+                end_index = db.query(IndexDaily).filter(
+                    and_(
+                        IndexDaily.ts_code == benchmark,
+                        IndexDaily.trade_date <= end_date_str
+                    )
+                ).order_by(IndexDaily.trade_date.desc()).first()
+
+                if end_index:
+                    # 获取起始日期的指数点位
+                    start_index = db.query(IndexDaily).filter(
+                        and_(
+                            IndexDaily.ts_code == benchmark,
+                            IndexDaily.trade_date <= start_date_str
+                        )
+                    ).order_by(IndexDaily.trade_date.desc()).first()
+
+                    if start_index:
+                        # 计算阶段涨跌幅
+                        stage_return = ((float(end_index.close) - float(start_index.close)) / float(start_index.close)) * 100
+
+                        # 获取今年1月1日的指数点位
+                        year_start_index = db.query(IndexDaily).filter(
+                            and_(
+                                IndexDaily.ts_code == benchmark,
+                                IndexDaily.trade_date <= year_start_str
+                            )
+                        ).order_by(IndexDaily.trade_date.desc()).first()
+
+                        ytd_return = None
+                        if year_start_index:
+                            ytd_return = ((float(end_index.close) - float(year_start_index.close)) / float(year_start_index.close)) * 100
+
+                        # 添加基准指数数据到结果列表
+                        result_data.append({
+                            'fund_code': benchmark,
+                            'short_name': index_names.get(benchmark, benchmark),
+                            'nav_date': end_index.trade_date[:4] + '-' + end_index.trade_date[4:6] + '-' + end_index.trade_date[6:8],
+                            'nav': round(float(end_index.close), 2),
+                            'stage_return': round(stage_return, 2),
+                            'ytd_return': round(ytd_return, 2) if ytd_return is not None else None,
+                            'compare_date': start_index.trade_date[:4] + '-' + start_index.trade_date[4:6] + '-' + start_index.trade_date[6:8],
+                            'compare_nav': round(float(start_index.close), 2)
+                        })
+
+                        logger.info(f"基准指数 {benchmark} 计算成功: 阶段涨幅 {stage_return:.2f}%")
+                    else:
+                        logger.warning(f"基准指数 {benchmark} 在 {start_date} 之前没有数据")
+                else:
+                    logger.warning(f"基准指数 {benchmark} 在 {end_date} 之前没有数据")
+
+            except Exception as e:
+                logger.error(f"计算基准指数失败: {str(e)}", exc_info=True)
+                errors.append(f"基准指数计算失败: {str(e)}")
+
+        message = f'成功计算 {len(result_data)} 个基金的阶段涨幅'
+        if errors:
+            message += f'，{len(errors)} 个失败'
+            logger.warning(f"错误详情: {errors}")
+
+        return {
+            'success': True,
+            'message': message,
+            'data': result_data,
+            'errors': errors if errors else None
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"计算阶段涨幅失败: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))

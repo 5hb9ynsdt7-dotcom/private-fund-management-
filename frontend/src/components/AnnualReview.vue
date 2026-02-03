@@ -640,17 +640,25 @@ const generateHoldingsAnalysisHTML = (data) => {
     })
   }
 
-  // 找出清仓和部分赎回
+  // 找出清仓和部分赎回（基于实际交易记录，而非市值变化）
   for (const [code, startHolding] of startMap) {
     const endHolding = endMap.get(code)
     if (!endHolding) {
+      // 年初有持仓，年末没有持仓 => 清仓
       cleared.push(startHolding)
-    } else if (endHolding.market_value < startHolding.market_value * 0.9) {
-      reduced.push({
-        ...endHolding,
-        start_market_value: startHolding.market_value,
-        reduction: startHolding.market_value - endHolding.market_value
-      })
+    } else {
+      // 检查是否有实际的赎回交易（从年度收益贡献数据中获取）
+      if (year_contribution_analysis && year_contribution_analysis.product_contribution) {
+        const productContribution = year_contribution_analysis.product_contribution.find(p => p.product_code === code)
+        if (productContribution && productContribution.year_redemption > 0) {
+          // 有实际的赎回交易 => 部分赎回
+          reduced.push({
+            ...endHolding,
+            start_market_value: startHolding.market_value,
+            reduction: productContribution.year_redemption  // 使用实际赎回金额
+          })
+        }
+      }
     }
   }
 
@@ -1044,22 +1052,12 @@ const initWaterfallChart = () => {
     cumulative -= productReturn
   })
 
-  // 终点柱：累计收益（应该接近0或就是总收益）
-  categories.push('累计')
-  displayData.push(Math.abs(cumulative))
-  baseData.push(Math.min(cumulative, 0))
-  colors.push('#34495E')  // 深蓝色
-  tooltipData.push({
-    name: '累计',
-    value: cumulative,
-    percentage: (cumulative / totalReturn * 100),
-    fullName: '最终累计收益'
-  })
+  // 不再添加"累计"柱子，瀑布图到产品结束
 
   // 构建连接线数据
   const lineData = []
   let previousTop = totalReturn
-  for (let i = 1; i < categories.length - 1; i++) {
+  for (let i = 1; i < categories.length; i++) {  // 移除 -1，因为没有累计柱了
     const currentBase = baseData[i]
     const currentDisplay = displayData[i]
     const currentTop = currentBase + (colors[i] === '#E74C3C' ? -currentDisplay : currentDisplay)
@@ -1115,7 +1113,7 @@ const initWaterfallChart = () => {
     },
     grid: {
       left: '5%',
-      right: '5%',
+      right: '8%',  // 增加右侧空间，确保数据标签完整显示
       bottom: '12%',
       top: '10%',
       containLabel: true
@@ -1132,17 +1130,18 @@ const initWaterfallChart = () => {
     yAxis: {
       type: 'value',
       name: '收益贡献金额（万元）',
+      position: 'left',  // 明确Y轴只在左侧显示
       min: yAxisMin,
       max: yAxisMax,
+      axisLine: {
+        show: false  // 删除纵轴坐标线
+      },
       axisLabel: {
-        formatter: '{value}'
+        formatter: '{value}',  // 保留刻度标签
+        inside: false  // 确保刻度标签在外侧（左侧）
       },
       splitLine: {
-        show: true,
-        lineStyle: {
-          type: 'dashed',
-          color: '#E5E5E5'
-        }
+        show: false  // 删除横向虚线（网格线）
       }
     },
     series: [
@@ -1160,6 +1159,9 @@ const initWaterfallChart = () => {
             borderColor: 'transparent',
             color: 'transparent'
           }
+        },
+        label: {
+          show: false  // 确保隐藏系列不显示标签
         },
         data: baseData,
         silent: true
@@ -1179,33 +1181,25 @@ const initWaterfallChart = () => {
         })),
         label: {
           show: true,
-          position: (params) => {
-            const dataIndex = params.dataIndex
-            const data = tooltipData[dataIndex]
-            // 正收益标签在上方，负收益标签在下方
-            return data.value >= 0 ? 'top' : 'bottom'
-          },
+          position: 'top',  // 统一显示在柱体顶部外侧
+          offset: [0, 5],   // 向上偏移5px，避免与柱体重叠
           formatter: (params) => {
             const dataIndex = params.dataIndex
             const data = tooltipData[dataIndex]
             const value = data.value
             const percentage = data.percentage
 
-            // 格式化显示
-            const valueStr = `${value >= 0 ? '+' : ''}${value.toFixed(1)}`
-            const percentStr = `${percentage.toFixed(0)}%`
+            // 格式化显示：金额 万（上方）换行 百分比%（下方）
+            const valueStr = `${Math.abs(value).toFixed(1)} 万`
+            const percentStr = `${Math.abs(percentage).toFixed(0)}%`
 
             return `${valueStr}\n${percentStr}`
           },
           fontSize: 11,
           fontWeight: 'bold',
-          color: (params) => {
-            const dataIndex = params.dataIndex
-            const data = tooltipData[dataIndex]
-            // 正收益红色，负收益绿色
-            return data.value >= 0 ? '#E74C3C' : '#2BB673'
-          },
-          lineHeight: 16
+          color: '#303133',  // 统一使用深灰色，清晰易读
+          lineHeight: 16,
+          distance: 10  // 增加与柱体的距离，避免重叠
         }
       },
       // 连接线系列

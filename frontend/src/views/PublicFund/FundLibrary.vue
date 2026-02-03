@@ -39,15 +39,38 @@
 
     <!-- 基金列表表格 -->
     <el-card class="table-card" shadow="never">
+      <template #header>
+        <div class="table-header">
+          <span>基金列表</span>
+          <div class="table-actions">
+            <el-button
+              v-if="selectedFunds.length > 0"
+              type="primary"
+              @click="showPerformanceDialog = true"
+            >
+              <el-icon><TrendCharts /></el-icon>
+              生成阶段涨幅卡片 ({{ selectedFunds.length }}个)
+            </el-button>
+          </div>
+        </div>
+      </template>
+
       <el-table
         v-loading="loading"
         :data="fundList"
         border
         stripe
         style="width: 100%"
+        @selection-change="handleSelectionChange"
       >
+        <el-table-column type="selection" width="55" fixed />
         <el-table-column prop="fund_code" label="基金代码" width="120" fixed />
         <el-table-column prop="fund_name" label="基金名称" min-width="300" show-overflow-tooltip />
+        <el-table-column prop="latest_nav_date" label="最新净值日期" width="140">
+          <template #default="{ row }">
+            {{ row.latest_nav_date || '-' }}
+          </template>
+        </el-table-column>
         <el-table-column label="状态" width="100">
           <template #default="{ row }">
             <el-tag :type="row.is_active ? 'success' : 'info'" size="small">
@@ -150,6 +173,111 @@
         </el-tab-pane>
       </el-tabs>
     </el-dialog>
+
+    <!-- 阶段涨幅对话框 -->
+    <el-dialog
+      v-model="showPerformanceDialog"
+      title="生成阶段涨幅卡片"
+      width="1100px"
+      @close="resetPerformanceForm"
+    >
+      <el-form :model="performanceForm" label-width="120px">
+        <el-form-item label="时间范围">
+          <el-radio-group v-model="performanceForm.dateMode" @change="handleDateModeChange">
+            <el-radio value="preset">上周一到本周一</el-radio>
+            <el-radio value="custom">自定义</el-radio>
+          </el-radio-group>
+        </el-form-item>
+
+        <el-form-item v-if="performanceForm.dateMode === 'custom'" label="起始日期">
+          <el-date-picker
+            v-model="performanceForm.startDate"
+            type="date"
+            placeholder="选择起始日期"
+            format="YYYY-MM-DD"
+            value-format="YYYY-MM-DD"
+            style="width: 200px"
+          />
+        </el-form-item>
+
+        <el-form-item v-if="performanceForm.dateMode === 'custom'" label="结束日期">
+          <el-date-picker
+            v-model="performanceForm.endDate"
+            type="date"
+            placeholder="选择结束日期"
+            format="YYYY-MM-DD"
+            value-format="YYYY-MM-DD"
+            style="width: 200px"
+          />
+        </el-form-item>
+
+        <el-form-item label="对比基准">
+          <el-select v-model="performanceForm.benchmark" placeholder="请选择基准指数（可选）" clearable style="width: 200px">
+            <el-option label="无" value="" />
+            <el-option label="沪深300" value="000300.SH" />
+            <el-option label="中证500" value="000905.SH" />
+            <el-option label="中证1000" value="000852.SH" />
+            <el-option label="中证2000" value="932000.CSI" />
+          </el-select>
+        </el-form-item>
+
+        <el-form-item label="已选基金">
+          <el-tag
+            v-for="fund in selectedFunds"
+            :key="fund.fund_code"
+            closable
+            @close="removeSelectedFund(fund)"
+            style="margin-right: 8px; margin-bottom: 8px"
+          >
+            {{ fund.fund_code }} - {{ fund.fund_name }}
+          </el-tag>
+        </el-form-item>
+
+        <el-form-item>
+          <el-button type="primary" @click="generatePerformanceCard" :loading="generatingPerformance">
+            生成卡片
+          </el-button>
+        </el-form-item>
+      </el-form>
+
+      <!-- 涨幅卡片展示 -->
+      <div v-if="performanceData.length > 0" class="performance-cards-section">
+        <el-divider content-position="left">
+          <span style="font-weight: 600">阶段涨幅数据</span>
+        </el-divider>
+
+        <el-table :data="performanceData" border stripe style="width: 100%">
+          <el-table-column prop="fund_code" label="产品代码" width="100" fixed />
+          <el-table-column prop="short_name" label="产品简称" width="150" show-overflow-tooltip />
+          <el-table-column prop="nav_date" label="净值日期" width="110" />
+          <el-table-column prop="nav" label="净值" width="100" align="right">
+            <template #default="{ row }">
+              {{ row.nav ? row.nav.toFixed(2) : '--' }}
+            </template>
+          </el-table-column>
+          <el-table-column prop="stage_return" label="阶段涨跌幅" width="130" align="right">
+            <template #default="{ row }">
+              <span :style="{ color: row.stage_return >= 0 ? '#F56C6C' : '#67C23A', fontWeight: 'bold' }">
+                {{ row.stage_return !== null && row.stage_return !== undefined ? (row.stage_return > 0 ? '+' : '') + row.stage_return.toFixed(2) + '%' : '--' }}
+              </span>
+            </template>
+          </el-table-column>
+          <el-table-column prop="ytd_return" label="今年以来涨跌幅" width="150" align="right">
+            <template #default="{ row }">
+              <span :style="{ color: row.ytd_return >= 0 ? '#F56C6C' : '#67C23A', fontWeight: 'bold' }">
+                {{ row.ytd_return !== null && row.ytd_return !== undefined ? (row.ytd_return > 0 ? '+' : '') + row.ytd_return.toFixed(2) + '%' : '--' }}
+              </span>
+            </template>
+          </el-table-column>
+          <el-table-column prop="compare_date" label="对比日期" width="110" />
+          <el-table-column prop="compare_nav" label="对比净值" width="100" align="right">
+            <template #default="{ row }">
+              {{ row.compare_nav ? row.compare_nav.toFixed(2) : '--' }}
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
@@ -157,10 +285,12 @@
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Search, Refresh } from '@element-plus/icons-vue'
+import { Plus, Search, Refresh, TrendCharts } from '@element-plus/icons-vue'
 import publicFundAPI from '@/api/publicFund'
+import axios from 'axios'
 
 const router = useRouter()
+const API_BASE = import.meta.env.PROD ? '' : 'http://localhost:8000'
 
 // 搜索表单
 const searchForm = reactive({
@@ -178,6 +308,20 @@ const pagination = reactive({
 const fundList = ref([])
 const loading = ref(false)
 const refreshingAll = ref(false)
+
+// 选中的基金
+const selectedFunds = ref([])
+
+// 阶段涨幅对话框
+const showPerformanceDialog = ref(false)
+const generatingPerformance = ref(false)
+const performanceData = ref([])
+const performanceForm = reactive({
+  dateMode: 'preset', // 'preset' or 'custom'
+  startDate: null,
+  endDate: null,
+  benchmark: '' // 基准指数代码
+})
 
 // 添加基金对话框
 const showAddDialog = ref(false)
@@ -383,6 +527,99 @@ const goToDetail = (fundCode) => {
   })
 }
 
+// 处理选择变化
+const handleSelectionChange = (selection) => {
+  selectedFunds.value = selection
+}
+
+// 移除选中的基金
+const removeSelectedFund = (fund) => {
+  selectedFunds.value = selectedFunds.value.filter(f => f.fund_code !== fund.fund_code)
+}
+
+// 处理日期模式变化
+const handleDateModeChange = (mode) => {
+  if (mode === 'preset') {
+    // 计算上周一到本周一
+    const today = new Date()
+    const dayOfWeek = today.getDay() // 0 is Sunday, 1 is Monday, etc.
+    const daysToMonday = dayOfWeek === 0 ? 1 : (8 - dayOfWeek) // Days until next Monday
+
+    // 本周一
+    const thisMonday = new Date(today)
+    thisMonday.setDate(today.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1))
+
+    // 上周一
+    const lastMonday = new Date(thisMonday)
+    lastMonday.setDate(thisMonday.getDate() - 7)
+
+    performanceForm.startDate = formatDate(lastMonday)
+    performanceForm.endDate = formatDate(thisMonday)
+  }
+}
+
+// 格式化日期
+const formatDate = (date) => {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+// 重置阶段涨幅表单
+const resetPerformanceForm = () => {
+  performanceForm.dateMode = 'preset'
+  performanceForm.startDate = null
+  performanceForm.endDate = null
+  performanceData.value = []
+}
+
+// 生成阶段涨幅卡片
+const generatePerformanceCard = async () => {
+  if (selectedFunds.value.length === 0) {
+    ElMessage.warning('请先选择基金')
+    return
+  }
+
+  // 确定日期范围
+  let startDate, endDate
+  if (performanceForm.dateMode === 'preset') {
+    handleDateModeChange('preset')
+    startDate = performanceForm.startDate
+    endDate = performanceForm.endDate
+  } else {
+    if (!performanceForm.startDate || !performanceForm.endDate) {
+      ElMessage.warning('请选择起始和结束日期')
+      return
+    }
+    startDate = performanceForm.startDate
+    endDate = performanceForm.endDate
+  }
+
+  generatingPerformance.value = true
+  try {
+    const fundCodes = selectedFunds.value.map(f => f.fund_code)
+    const response = await axios.post(`${API_BASE}/api/public-fund/stage-performance`, {
+      fund_codes: fundCodes,
+      start_date: startDate,
+      end_date: endDate,
+      benchmark: performanceForm.benchmark || undefined
+    })
+
+    if (response.data.success) {
+      performanceData.value = response.data.data
+      ElMessage.success('生成成功')
+    } else {
+      ElMessage.error(response.data.message || '生成失败')
+    }
+  } catch (error) {
+    console.error('生成阶段涨幅卡片失败:', error)
+    ElMessage.error('生成失败：' + (error.response?.data?.detail || error.message))
+  } finally {
+    generatingPerformance.value = false
+  }
+}
+
 onMounted(() => {
   loadFundList()
 })
@@ -420,9 +657,24 @@ onMounted(() => {
   margin-bottom: 20px;
 }
 
+.table-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.table-actions {
+  display: flex;
+  gap: 10px;
+}
+
 .pagination-container {
   margin-top: 20px;
   display: flex;
   justify-content: flex-end;
+}
+
+.performance-cards-section {
+  margin-top: 24px;
 }
 </style>

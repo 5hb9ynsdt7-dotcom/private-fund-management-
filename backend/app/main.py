@@ -9,7 +9,7 @@ import os
 from datetime import datetime
 
 # 导入路由模块
-from .routes import nav, strategy, position, trade, dividend, transaction, project_holding, stage_performance, nav_crawler, product_analysis, fund, fund_schedule, quantitative, tushare, public_fund, portfolio, portfolio_backtest, performance_pk
+from .routes import nav, strategy, position, trade, dividend, transaction, project_holding, stage_performance, nav_crawler, product_analysis, fund, fund_schedule, quantitative, tushare, public_fund, portfolio, portfolio_backtest, performance_pk, product_list
 from .database import init_database, get_database_status
 from .init_data import init_data_if_needed
 from .migrations import run_migrations
@@ -31,8 +31,9 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "http://localhost:3002", "http://127.0.0.1:3002", 
-        "http://localhost:3001", "http://127.0.0.1:3001", 
+        "http://localhost:3003", "http://127.0.0.1:3003",
+        "http://localhost:3002", "http://127.0.0.1:3002",
+        "http://localhost:3001", "http://127.0.0.1:3001",
         "http://localhost:3000", "http://127.0.0.1:3000",
         "https://private-fund-management-production.up.railway.app"  # 生产环境域名
     ],
@@ -162,6 +163,7 @@ app.include_router(public_fund.router, tags=["公募基金"])  # 公募基金模
 app.include_router(portfolio.router, tags=["实盘组合"])  # 实盘组合模块
 app.include_router(portfolio_backtest.router, tags=["组合回测"])  # 组合回测模块
 app.include_router(performance_pk.router, tags=["业绩PK"])  # 业绩PK模块
+app.include_router(product_list.router, tags=["产品清单管理"])  # 产品清单管理模块
 
 # 配置静态文件服务 (用于生产环境)
 # 在Docker容器中，前端构建文件在 /app/frontend/dist

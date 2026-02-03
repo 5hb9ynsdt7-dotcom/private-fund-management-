@@ -223,6 +223,63 @@ def add_product_features(engine):
         raise
 
 
+def add_nav_adjusted_accum_nav(engine):
+    """为Nav表添加adjusted_accum_nav字段（复权累计净值）"""
+    logger.info("检查 nav.adjusted_accum_nav 字段...")
+
+    try:
+        with engine.connect() as conn:
+            if check_column_exists(engine, 'nav', 'adjusted_accum_nav'):
+                logger.info("✓ nav.adjusted_accum_nav 字段已存在")
+                return
+
+            logger.info("添加 nav.adjusted_accum_nav 字段...")
+            conn.execute(text("""
+                ALTER TABLE nav
+                ADD COLUMN adjusted_accum_nav DECIMAL(16, 6)
+            """))
+            conn.commit()
+            logger.info("✓ nav.adjusted_accum_nav 字段添加成功")
+    except Exception as e:
+        logger.error(f"添加 nav.adjusted_accum_nav 字段失败: {e}")
+        raise
+
+
+def add_portfolio_type_fields(engine):
+    """为PublicFundPortfolio表添加portfolio_type和update_frequency字段"""
+    logger.info("检查 public_fund_portfolio.portfolio_type 和 update_frequency 字段...")
+
+    try:
+        with engine.connect() as conn:
+            # 添加 portfolio_type 字段
+            if not check_column_exists(engine, 'public_fund_portfolio', 'portfolio_type'):
+                logger.info("添加 public_fund_portfolio.portfolio_type 字段...")
+                conn.execute(text("""
+                    ALTER TABLE public_fund_portfolio
+                    ADD COLUMN portfolio_type VARCHAR(20) DEFAULT 'public' NOT NULL
+                """))
+                conn.commit()
+                logger.info("✓ public_fund_portfolio.portfolio_type 字段添加成功")
+            else:
+                logger.info("✓ public_fund_portfolio.portfolio_type 字段已存在")
+
+            # 添加 update_frequency 字段
+            if not check_column_exists(engine, 'public_fund_portfolio', 'update_frequency'):
+                logger.info("添加 public_fund_portfolio.update_frequency 字段...")
+                conn.execute(text("""
+                    ALTER TABLE public_fund_portfolio
+                    ADD COLUMN update_frequency VARCHAR(20) DEFAULT 'daily'
+                """))
+                conn.commit()
+                logger.info("✓ public_fund_portfolio.update_frequency 字段添加成功")
+            else:
+                logger.info("✓ public_fund_portfolio.update_frequency 字段已存在")
+
+    except Exception as e:
+        logger.error(f"添加 Portfolio 类型字段失败: {e}")
+        raise
+
+
 def run_migrations():
     """
     执行所有数据库迁移
@@ -244,6 +301,8 @@ def run_migrations():
         create_weekly_excess_cache_table(engine)  # 新增：创建周度超额缓存表
         add_fund_schedule_fee_structure(engine)  # 新增：添加费用结构字段
         add_product_features(engine)  # 新增：添加产品特征字段
+        add_nav_adjusted_accum_nav(engine)  # 新增：添加复权累计净值字段
+        add_portfolio_type_fields(engine)  # 新增：添加组合类型和更新频率字段
 
         logger.info("=" * 60)
         logger.info("✓ 所有数据库迁移完成")

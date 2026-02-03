@@ -72,6 +72,14 @@ class PublicFundService:
                          .limit(page_size)\
                          .all()
 
+            # 为每个基金添加最新净值日期
+            for fund in funds:
+                latest_nav = self.db.query(PublicFundNav)\
+                    .filter(PublicFundNav.fund_code == fund.fund_code)\
+                    .order_by(desc(PublicFundNav.nav_date))\
+                    .first()
+                fund.latest_nav_date = latest_nav.nav_date if latest_nav else None
+
             return funds, total
 
         except Exception as e:

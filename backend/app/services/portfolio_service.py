@@ -17,6 +17,7 @@ from ..models_portfolio import (
     PublicFundPortfolioNav
 )
 from ..models_public_fund import PublicFund, PublicFundNav
+from ..models import Nav, Fund  # 添加私募基金模型
 from ..schemas.portfolio import (
     PortfolioCreate,
     PortfolioUpdate,
@@ -32,6 +33,112 @@ class PortfolioService:
     def __init__(self, db: Session):
         self.db = db
 
+    # ========== 辅助方法 ==========
+
+    def _get_fund_nav(self, fund_code: str, nav_date: date, portfolio_type: str):
+        """
+        根据组合类型从不同的表获取净值
+
+        Args:
+            fund_code: 基金代码
+            nav_date: 净值日期
+            portfolio_type: 组合类型 ('public' 或 'private')
+
+        Returns:
+            包含 unit_nav, accum_nav, nav_date 的字典，未找到则返回 None
+        """
+        if portfolio_type == 'private':
+            # 私募基金：从 nav 表获取
+            nav = self.db.query(Nav).filter(
+                and_(
+                    Nav.fund_code == fund_code,
+                    Nav.nav_date <= nav_date
+                )
+            ).order_by(desc(Nav.nav_date)).first()
+
+            if nav:
+                return {
+                    'unit_nav': nav.unit_nav,
+                    'accum_nav': nav.accum_nav,
+                    'nav_date': nav.nav_date
+                }
+        else:
+            # 公募基金：从 public_fund_nav 表获取
+            nav = self.db.query(PublicFundNav).filter(
+                and_(
+                    PublicFundNav.fund_code == fund_code,
+                    PublicFundNav.nav_date <= nav_date
+                )
+            ).order_by(desc(PublicFundNav.nav_date)).first()
+
+            if nav:
+                return {
+                    'unit_nav': nav.unit_nav,
+                    'accum_nav': nav.accum_nav,
+                    'nav_date': nav.nav_date
+                }
+
+        return None
+
+    def _get_latest_nav(self, fund_code: str, portfolio_type: str, as_of_date: Optional[date] = None):
+        """
+        获取最新净值（在指定日期或之前）
+
+        Args:
+            fund_code: 基金代码
+            portfolio_type: 组合类型 ('public' 或 'private')
+            as_of_date: 截止日期，默认为今天
+
+        Returns:
+            包含 unit_nav, accum_nav, nav_date 的字典，未找到则返回 None
+        """
+        if not as_of_date:
+            as_of_date = date.today()
+
+        if portfolio_type == 'private':
+            # 私募基金：从 nav 表获取
+            nav = self.db.query(Nav).filter(
+                and_(
+                    Nav.fund_code == fund_code,
+                    Nav.nav_date <= as_of_date
+                )
+            ).order_by(desc(Nav.nav_date)).first()
+        else:
+            # 公募基金：从 public_fund_nav 表获取
+            nav = self.db.query(PublicFundNav).filter(
+                and_(
+                    PublicFundNav.fund_code == fund_code,
+                    PublicFundNav.nav_date <= as_of_date
+                )
+            ).order_by(desc(PublicFundNav.nav_date)).first()
+
+        if nav:
+            return {
+                'unit_nav': nav.unit_nav,
+                'accum_nav': nav.accum_nav,
+                'nav_date': nav.nav_date
+            }
+
+        return None
+
+    def _verify_fund_exists(self, fund_code: str, portfolio_type: str):
+        """
+        验证基金是否存在
+
+        Args:
+            fund_code: 基金代码
+            portfolio_type: 组合类型 ('public' 或 'private')
+
+        Returns:
+            基金记录，不存在则返回 None
+        """
+        if portfolio_type == 'private':
+            # 私募基金：从 fund 表查询
+            return self.db.query(Fund).filter(Fund.fund_code == fund_code).first()
+        else:
+            # 公募基金：从 public_fund 表查询
+            return self.db.query(PublicFund).filter(PublicFund.fund_code == fund_code).first()
+
     # ========== 组合管理 ==========
 
     def create_portfolio(self, portfolio_data: PortfolioCreate) -> PublicFundPortfolio:
@@ -42,6 +149,8 @@ class PortfolioService:
             portfolio = PublicFundPortfolio(
                 portfolio_name=portfolio_data.portfolio_name,
                 description=portfolio_data.description,
+                portfolio_type=portfolio_data.portfolio_type or 'public',
+                update_frequency=portfolio_data.update_frequency or 'daily',
                 initial_amount=Decimal('0'),  # 初始为0，由交易累加
                 cash_balance=Decimal('0')     # 不使用，保留字段兼容
             )
@@ -50,7 +159,7 @@ class PortfolioService:
             self.db.commit()
             self.db.refresh(portfolio)
 
-            logger.info(f"创建组合成功: {portfolio.portfolio_name}")
+            logger.info(f"创建组合成功: {portfolio.portfolio_name} (类型: {portfolio.portfolio_type})")
             return portfolio
 
         except Exception as e:
@@ -137,44 +246,73 @@ class PortfolioService:
     def add_transaction(self, portfolio_id: int, transaction_data: TransactionCreate) -> PublicFundPortfolioTransaction:
         """
         添加交易记录并更新持仓
-        自动从公募基金净值表获取净值，并计算份额
+        支持四种交易类型：
+        - buy: 买入（需要金额，自动计算份额）
+        - sell: 卖出（需要金额或份额）
+        - cash_dividend: 现金分红（需要金额，增加盈亏）
+        - reinvest_dividend: 红利再投（需要份额，增加持仓）
         """
         try:
             portfolio = self.get_portfolio(portfolio_id)
             if not portfolio:
                 raise ValueError(f"组合 {portfolio_id} 不存在")
 
-            # 验证基金是否存在
-            fund = self.db.query(PublicFund).filter(PublicFund.fund_code == transaction_data.fund_code).first()
+            # 验证基金是否存在（根据组合类型查询不同的表）
+            fund = self._verify_fund_exists(transaction_data.fund_code, portfolio.portfolio_type)
             if not fund:
-                raise ValueError(f"基金 {transaction_data.fund_code} 不存在，请先在公募基金库中添加该基金")
+                fund_type_name = "私募基金" if portfolio.portfolio_type == 'private' else "公募基金"
+                raise ValueError(f"基金 {transaction_data.fund_code} 不存在，请先在{fund_type_name}库中添加该基金")
 
-            # 自动获取交易日期的净值（如果未提供）
+            # 根据交易类型验证必填字段
+            if transaction_data.transaction_type in ['buy', 'sell', 'cash_dividend']:
+                if not transaction_data.amount or transaction_data.amount == 0:
+                    raise ValueError(f"{transaction_data.transaction_type} 交易必须提供金额")
+
+            if transaction_data.transaction_type == 'reinvest_dividend':
+                if not transaction_data.shares or transaction_data.shares == 0:
+                    raise ValueError("红利再投交易必须提供份额")
+
+            # 自动获取交易日期的净值（如果未提供）- 使用新的辅助方法
             nav_value = transaction_data.nav
             if not nav_value:
-                # 从公募基金净值表获取最近的净值
-                nav_record = self.db.query(PublicFundNav).filter(
-                    and_(
-                        PublicFundNav.fund_code == transaction_data.fund_code,
-                        PublicFundNav.nav_date <= transaction_data.transaction_date
+                nav_data = self._get_fund_nav(
+                    transaction_data.fund_code,
+                    transaction_data.transaction_date,
+                    portfolio.portfolio_type
+                )
+
+                if not nav_data:
+                    fund_type_name = "私募基金" if portfolio.portfolio_type == 'private' else "公募基金"
+                    raise ValueError(
+                        f"未找到{fund_type_name} {transaction_data.fund_code} 在 {transaction_data.transaction_date} 或之前的净值数据，请先添加净值"
                     )
-                ).order_by(desc(PublicFundNav.nav_date)).first()
 
-                if not nav_record:
-                    raise ValueError(f"未找到基金 {transaction_data.fund_code} 在 {transaction_data.transaction_date} 或之前的净值数据，请先抓取净值")
+                nav_value = nav_data['unit_nav']
+                logger.info(f"自动获取净值: {transaction_data.fund_code} 日期:{nav_data['nav_date']} 净值:{nav_value}")
 
-                nav_value = nav_record.unit_nav
-                logger.info(f"自动获取净值: {transaction_data.fund_code} 日期:{nav_record.nav_date} 净值:{nav_value}")
-
-            # 自动计算份额（如果未提供）
+            # 计算份额和金额
             shares = transaction_data.shares
-            if not shares or shares == 0:
-                if not transaction_data.amount or transaction_data.amount == 0:
-                    raise ValueError("请提供交易金额或交易份额")
+            amount = transaction_data.amount
 
-                # 根据金额和净值计算份额
-                shares = transaction_data.amount / nav_value
-                logger.info(f"自动计算份额: 金额:{transaction_data.amount} / 净值:{nav_value} = {shares}")
+            if transaction_data.transaction_type in ['buy', 'sell']:
+                # 买入/卖出：自动计算份额（如果未提供）
+                if not shares or shares == 0:
+                    if not amount or amount == 0:
+                        raise ValueError("请提供交易金额或交易份额")
+                    shares = amount / nav_value
+                    logger.info(f"自动计算份额: 金额:{amount} / 净值:{nav_value} = {shares}")
+                elif not amount or amount == 0:
+                    # 如果只提供了份额，计算金额
+                    amount = shares * nav_value
+                    logger.info(f"自动计算金额: 份额:{shares} * 净值:{nav_value} = {amount}")
+
+            elif transaction_data.transaction_type == 'cash_dividend':
+                # 现金分红：金额已提供，份额设为0
+                shares = Decimal('0')
+
+            elif transaction_data.transaction_type == 'reinvest_dividend':
+                # 红利再投：份额已提供，金额设为0
+                amount = Decimal('0')
 
             # 创建交易记录
             transaction = PublicFundPortfolioTransaction(
@@ -182,7 +320,7 @@ class PortfolioService:
                 fund_code=transaction_data.fund_code,
                 transaction_type=transaction_data.transaction_type,
                 transaction_date=transaction_data.transaction_date,
-                amount=transaction_data.amount,
+                amount=amount,
                 shares=shares,
                 nav=nav_value,
                 fee=transaction_data.fee or Decimal('0'),
@@ -196,7 +334,7 @@ class PortfolioService:
                 fund_code=transaction_data.fund_code,
                 transaction_type=transaction_data.transaction_type,
                 transaction_date=transaction_data.transaction_date,
-                amount=transaction_data.amount,
+                amount=amount,
                 shares=shares,
                 nav=nav_value,
                 fee=transaction_data.fee,
@@ -204,11 +342,14 @@ class PortfolioService:
             )
             self._update_position(portfolio_id, updated_transaction_data)
 
-            # 更新总投入金额（不使用现金余额概念）
+            # 更新总投入金额
             if transaction_data.transaction_type == 'buy':
                 # 买入：增加总投入
-                portfolio.initial_amount += transaction_data.amount
-            # 卖出不改变总投入
+                portfolio.initial_amount += amount
+            elif transaction_data.transaction_type == 'cash_dividend':
+                # 现金分红：减少总投入（相当于收回部分投资）
+                portfolio.initial_amount -= amount
+            # 卖出和红利再投不改变总投入
 
             self.db.commit()
             self.db.refresh(transaction)
@@ -267,6 +408,20 @@ class PortfolioService:
             else:
                 position.avg_cost_nav = None
 
+        elif transaction.transaction_type == 'cash_dividend':
+            # 现金分红：不改变份额，减少成本（相当于收回部分投资）
+            position.cost_amount -= transaction.amount
+            # 更新平均成本净值
+            if position.shares > 0:
+                position.avg_cost_nav = position.cost_amount / position.shares
+
+        elif transaction.transaction_type == 'reinvest_dividend':
+            # 红利再投：增加份额，不改变成本（分红转为份额）
+            position.shares += transaction.shares
+            # 更新平均成本净值
+            if position.shares > 0:
+                position.avg_cost_nav = position.cost_amount / position.shares
+
     def get_transactions(self, portfolio_id: int, limit: int = 100) -> List[PublicFundPortfolioTransaction]:
         """
         获取交易记录
@@ -307,11 +462,14 @@ class PortfolioService:
             # 回滚持仓
             self._rollback_position(portfolio_id, transaction)
 
-            # 回滚总投入（不使用现金余额概念）
+            # 回滚总投入
             if transaction.transaction_type == 'buy':
                 # 回滚买入：减少总投入
                 portfolio.initial_amount -= transaction.amount
-            # 卖出不改变总投入
+            elif transaction.transaction_type == 'cash_dividend':
+                # 回滚现金分红：增加总投入
+                portfolio.initial_amount += transaction.amount
+            # 卖出和红利再投不改变总投入
 
             # 删除交易记录
             self.db.delete(transaction)
@@ -366,6 +524,22 @@ class PortfolioService:
             if position.shares > 0:
                 position.avg_cost_nav = position.cost_amount / position.shares
 
+        elif transaction.transaction_type == 'cash_dividend':
+            # 回滚现金分红：增加成本
+            position.cost_amount += transaction.amount
+            # 更新平均成本净值
+            if position.shares > 0:
+                position.avg_cost_nav = position.cost_amount / position.shares
+
+        elif transaction.transaction_type == 'reinvest_dividend':
+            # 回滚红利再投：减少份额
+            position.shares -= transaction.shares
+            # 更新平均成本净值
+            if position.shares > 0:
+                position.avg_cost_nav = position.cost_amount / position.shares
+            else:
+                position.avg_cost_nav = None
+
     # ========== 持仓查询 ==========
 
     def get_positions(self, portfolio_id: int) -> List[PublicFundPortfolioPosition]:
@@ -408,20 +582,15 @@ class PortfolioService:
             position_details = []
 
             for position in positions:
-                # 获取最新净值
-                nav_query = self.db.query(PublicFundNav)\
-                    .filter(
-                        and_(
-                            PublicFundNav.fund_code == position.fund_code,
-                            PublicFundNav.nav_date <= as_of_date
-                        )
-                    )\
-                    .order_by(desc(PublicFundNav.nav_date))
+                # 获取最新净值 - 使用新的辅助方法
+                nav_data = self._get_latest_nav(
+                    position.fund_code,
+                    portfolio.portfolio_type,
+                    as_of_date
+                )
 
-                latest_nav_record = nav_query.first()
-
-                if latest_nav_record:
-                    current_nav = latest_nav_record.unit_nav
+                if nav_data:
+                    current_nav = nav_data['unit_nav']
                     current_value = position.shares * current_nav
                     total_market_value += current_value
 
@@ -434,7 +603,7 @@ class PortfolioService:
                         'cost_amount': position.cost_amount,
                         'avg_cost_nav': position.avg_cost_nav,
                         'current_nav': current_nav,
-                        'current_nav_date': latest_nav_record.nav_date,
+                        'current_nav_date': nav_data['nav_date'],
                         'current_value': current_value,
                         'profit_loss': profit_loss,
                         'profit_loss_rate': profit_loss_rate

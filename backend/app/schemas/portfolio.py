@@ -15,6 +15,8 @@ class PortfolioBase(BaseModel):
     """组合基础模型"""
     portfolio_name: str = Field(..., description="组合名称")
     description: Optional[str] = Field(None, description="组合描述")
+    portfolio_type: Optional[str] = Field('public', description="组合类型: public/private")
+    update_frequency: Optional[str] = Field('daily', description="更新频率: daily/weekly/monthly")
 
 
 class PortfolioCreate(PortfolioBase):
@@ -37,6 +39,8 @@ class PortfolioResponse(BaseModel):
     description: Optional[str] = None
     cash_balance: Decimal
     is_active: bool
+    portfolio_type: Optional[str] = Field('public', description="组合类型: public/private")
+    update_frequency: Optional[str] = Field('daily', description="更新频率: daily/weekly/monthly")
     created_at: datetime
     updated_at: datetime
 
@@ -56,10 +60,10 @@ class PortfolioResponse(BaseModel):
 class TransactionBase(BaseModel):
     """交易记录基础模型"""
     fund_code: str = Field(..., description="基金代码")
-    transaction_type: str = Field(..., description="交易类型: buy/sell")
+    transaction_type: str = Field(..., description="交易类型: buy/sell/cash_dividend/reinvest_dividend")
     transaction_date: date = Field(..., description="交易日期")
-    amount: Decimal = Field(..., description="交易金额")
-    shares: Optional[Decimal] = Field(None, description="交易份额（可选，系统自动计算）")
+    amount: Optional[Decimal] = Field(None, description="交易金额（买入/卖出/现金分红必填）")
+    shares: Optional[Decimal] = Field(None, description="交易份额（红利再投必填，其他可选）")
     nav: Optional[Decimal] = Field(None, description="交易净值（可选，系统自动获取）")
     fee: Optional[Decimal] = Field(0, description="手续费")
     note: Optional[str] = Field(None, description="备注")

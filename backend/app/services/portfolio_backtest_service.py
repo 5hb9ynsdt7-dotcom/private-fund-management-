@@ -30,6 +30,7 @@ class PortfolioBacktestService:
         start_date: str,
         end_date: str,
         benchmark: str,
+        benchmark_product: str,
         rebalance_frequency: str,
         reinvest_dividend: bool,
         consider_fees: bool,
@@ -44,6 +45,8 @@ class PortfolioBacktestService:
             initial_capital: 初始资金（万元）
             start_date: 开始日期
             end_date: 结束日期
+            benchmark: 基准指数代码
+            benchmark_product: 基准产品代码
             rebalance_frequency: 调仓频率
             reinvest_dividend: 是否分红再投资
             consider_fees: 是否考虑费用
@@ -133,10 +136,16 @@ class PortfolioBacktestService:
         benchmark_nav_curve = None
         benchmark_drawdown_curve = None
         if benchmark:
-            # 提取组合的日期列表
+            # 基准为指数
             portfolio_dates = list(portfolio_nav_series.keys())
             benchmark_nav_curve, benchmark_drawdown_curve = self._get_benchmark_curves(
                 benchmark, start_date, end_date, portfolio_dates
+            )
+        elif benchmark_product:
+            # 基准为产品
+            portfolio_dates = list(portfolio_nav_series.keys())
+            benchmark_nav_curve, benchmark_drawdown_curve = await self._get_product_benchmark_curves(
+                db, benchmark_product, start_date, end_date, portfolio_dates
             )
 
         # 10.6. 分析创新高事件
@@ -1452,3 +1461,110 @@ class PortfolioBacktestService:
             "avgDaysBetweenHighs": avg_days,
             "avgDrawdown": avg_drawdown
         }
+
+    async def _get_product_benchmark_curves(
+        self,
+        db: Session,
+        product_code: str,
+        start_date: str,
+        end_date: str,
+        portfolio_dates: list
+    ) -> tuple:
+        """
+        获取产品作为基准的净值曲线和回撤曲线，与组合日期点对齐
+
+        Args:
+            db: 数据库会话
+            product_code: 产品代码
+            start_date: 开始日期
+            end_date: 结束日期
+            portfolio_dates: 组合的日期列表，用于对齐基准数据点
+
+        Returns:
+            (benchmark_nav_curve, benchmark_drawdown_curve)
+        """
+        try:
+            # 查询产品的净值数据
+            navs = db.query(Nav).filter(
+                and_(
+                    Nav.fund_code == product_code,
+                    Nav.nav_date >= start_date,
+                    Nav.nav_date <= end_date
+                )
+            ).order_by(Nav.nav_date).all()
+
+            if not navs:
+                logger.warning(f"产品 {product_code} 在指定时间范围内没有净值数据")
+                return None, None
+
+            # 构建产品净值数据映射
+            product_data_map = {}
+            for nav in navs:
+                date_str = nav.nav_date.strftime('%Y-%m-%d')
+                product_data_map[date_str] = float(nav.accum_nav)
+
+            # 对于组合的每个日期，找到对应或最近的产品净值
+            benchmark_data = []
+            for portfolio_date in portfolio_dates:
+                date_key = portfolio_date if isinstance(portfolio_date, str) else portfolio_date
+
+                # 首先尝试精确匹配
+                if date_key in product_data_map:
+                    benchmark_data.append({
+                        'date': date_key,
+                        'value': product_data_map[date_key]
+                    })
+                else:
+                    # 如果没有精确匹配，往前找最近的交易日
+                    from datetime import datetime, timedelta
+                    current_date = datetime.strptime(date_key, '%Y-%m-%d')
+                    found = False
+
+                    # 往前找最多10天
+                    for i in range(1, 11):
+                        prev_date = (current_date - timedelta(days=i)).strftime('%Y-%m-%d')
+                        if prev_date in product_data_map:
+                            benchmark_data.append({
+                                'date': date_key,
+                                'value': product_data_map[prev_date]
+                            })
+                            found = True
+                            break
+
+                    if not found:
+                        logger.warning(f"未找到日期 {date_key} 附近的产品净值数据")
+
+            if not benchmark_data:
+                logger.warning(f"产品 {product_code} 没有可用的基准数据")
+                return None, None
+
+            # 计算归一化净值（以第一个值为基准=1.0）
+            first_value = benchmark_data[0]['value']
+            benchmark_nav_curve = []
+            for item in benchmark_data:
+                normalized_nav = item['value'] / first_value
+                benchmark_nav_curve.append({
+                    'date': item['date'],
+                    'nav': normalized_nav
+                })
+
+            # 计算回撤曲线
+            benchmark_drawdown_curve = []
+            peak = 0
+            for item in benchmark_nav_curve:
+                nav = item['nav']
+                if nav > peak:
+                    peak = nav
+                drawdown = (nav - peak) / peak if peak > 0 else 0
+                benchmark_drawdown_curve.append({
+                    'date': item['date'],
+                    'drawdown': drawdown
+                })
+
+            logger.info(f"成功获取产品 {product_code} 基准数据，共 {len(benchmark_nav_curve)} 个点（与组合日期对齐）")
+            return benchmark_nav_curve, benchmark_drawdown_curve
+
+        except Exception as e:
+            logger.error(f"获取产品基准数据失败: {str(e)}", exc_info=True)
+            return None, None
+

@@ -40,7 +40,8 @@ class BacktestRequest(BaseModel):
     initial_capital: float  # 初始资金（万元）
     start_date: str  # 开始日期 YYYY-MM-DD
     end_date: str  # 结束日期 YYYY-MM-DD
-    benchmark: Optional[str] = None  # 对比基准
+    benchmark: Optional[str] = None  # 对比基准（指数代码）
+    benchmark_product: Optional[str] = None  # 对比基准（产品代码）
     rebalance_frequency: str = "quarterly"  # 调仓频率: none, monthly, quarterly, semiannual, annual
     reinvest_dividend: bool = True  # 是否分红再投资
     consider_fees: bool = True  # 是否考虑费用
@@ -95,6 +96,7 @@ async def run_backtest(
             start_date=request.start_date,
             end_date=request.end_date,
             benchmark=request.benchmark,
+            benchmark_product=request.benchmark_product,
             rebalance_frequency=request.rebalance_frequency,
             reinvest_dividend=request.reinvest_dividend,
             consider_fees=request.consider_fees,
@@ -134,7 +136,7 @@ async def save_portfolio(
     db: Session = Depends(get_db)
 ):
     """
-    保存组合配置
+    保存组合配置并运行回测
 
     - **portfolio_name**: 组合名称
     - **portfolio**: 组合产品列表
@@ -162,6 +164,31 @@ async def save_portfolio(
             "items": [item.dict() for item in request.portfolio]
         }
 
+        # 运行回测获取结果（用于业绩PK）
+        from datetime import datetime, timedelta
+        end_date = datetime.now().strftime('%Y-%m-%d')
+        start_date = (datetime.now() - timedelta(days=3*365)).strftime('%Y-%m-%d')
+
+        backtest_result_data = None
+        try:
+            backtest_result = await backtest_service.run_backtest(
+                db=db,
+                portfolio=request.portfolio,
+                initial_capital=request.initial_capital,
+                start_date=start_date,
+                end_date=end_date,
+                benchmark=None,
+                benchmark_product=None,
+                rebalance_frequency=request.rebalance_frequency,
+                reinvest_dividend=request.reinvest_dividend,
+                consider_fees=request.consider_fees,
+                weight_mode=request.weight_mode
+            )
+            backtest_result_data = json.dumps(backtest_result, ensure_ascii=False)
+            logger.info(f"组合 '{request.portfolio_name}' 回测成功")
+        except Exception as e:
+            logger.warning(f"组合 '{request.portfolio_name}' 回测失败: {str(e)}，将保存配置但不保存回测结果")
+
         # 创建新的组合记录
         new_portfolio = BacktestPortfolio(
             portfolio_name=request.portfolio_name.strip(),
@@ -170,7 +197,8 @@ async def save_portfolio(
             weight_mode=request.weight_mode,
             rebalance_frequency=request.rebalance_frequency,
             reinvest_dividend=request.reinvest_dividend,
-            consider_fees=request.consider_fees
+            consider_fees=request.consider_fees,
+            backtest_result=backtest_result_data
         )
 
         db.add(new_portfolio)

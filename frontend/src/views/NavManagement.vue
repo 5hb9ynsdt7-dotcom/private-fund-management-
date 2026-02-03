@@ -72,6 +72,14 @@
               <el-icon><Refresh /></el-icon>
               刷新
             </el-button>
+            <el-button
+              type="warning"
+              @click="handleRecalculateAdjusted"
+              :loading="recalculatingAdjusted"
+            >
+              <el-icon><Tools /></el-icon>
+              计算复权净值
+            </el-button>
           </el-space>
         </div>
       </template>
@@ -486,6 +494,7 @@ const tableLoading = ref(false)
 const selectedFunds = ref([])
 const fundList = ref([])
 const searchKeyword = ref('')
+const recalculatingAdjusted = ref(false) // 计算复权净值loading状态
 
 // 分红管理相关状态
 const dividendDialogVisible = ref(false)
@@ -607,6 +616,47 @@ const loadFundList = async () => {
 const refreshData = () => {
   selectedFunds.value = []
   loadFundList()
+}
+
+// 计算复权净值
+const handleRecalculateAdjusted = async () => {
+  try {
+    await ElMessageBox.confirm(
+      '是否重新计算所有基金的复权累计净值？此操作可能需要一些时间。',
+      '确认操作',
+      {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }
+    )
+
+    recalculatingAdjusted.value = true
+
+    const response = await fetch(`${API_BASE}/api/nav/recalculate-adjusted`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    })
+
+    const result = await response.json()
+
+    if (result.success) {
+      ElMessage.success(result.message || '复权净值计算完成')
+      // 刷新基金列表
+      await loadFundList()
+    } else {
+      ElMessage.error(result.message || '复权净值计算失败')
+    }
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.error('计算复权净值失败:', error)
+      ElMessage.error('计算复权净值失败，请稍后重试')
+    }
+  } finally {
+    recalculatingAdjusted.value = false
+  }
 }
 
 // 处理选择变化

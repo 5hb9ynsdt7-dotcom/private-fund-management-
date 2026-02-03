@@ -98,7 +98,7 @@
         <!-- 基金代码 -->
         <el-table-column
           label="基金代码"
-          min-width="160"
+          width="140"
           align="center"
         >
           <template #default>
@@ -109,7 +109,7 @@
         <!-- 产品名称 -->
         <el-table-column
           label="产品名称"
-          min-width="360"
+          width="280"
           align="center"
         >
           <template #default>
@@ -121,14 +121,19 @@
         <el-table-column
           prop="nav_date"
           label="净值日期"
-          min-width="160"
+          width="180"
           sortable
           align="center"
         >
           <template #default="{ row }">
-            <span class="date-cell">
-              {{ formatDate(row.nav_date) }}
-            </span>
+            <div class="date-cell-wrapper">
+              <span class="date-cell">
+                {{ formatDate(row.nav_date) }}
+              </span>
+              <span v-if="dividendDates.has(row.nav_date)" class="dividend-badge">
+                （分红）
+              </span>
+            </div>
           </template>
         </el-table-column>
 
@@ -136,7 +141,7 @@
         <el-table-column
           prop="unit_nav"
           label="单位净值"
-          min-width="150"
+          width="140"
           sortable
           align="center"
         >
@@ -151,7 +156,7 @@
         <el-table-column
           prop="accum_nav"
           label="累计净值"
-          min-width="150"
+          width="140"
           sortable
           align="center"
         >
@@ -162,10 +167,25 @@
           </template>
         </el-table-column>
 
+        <!-- 复权累计净值 -->
+        <el-table-column
+          prop="adjusted_accum_nav"
+          label="复权累计净值"
+          width="160"
+          sortable
+          align="center"
+        >
+          <template #default="{ row }">
+            <span class="nav-value" style="color: #409EFF; font-weight: 600;">
+              {{ row.adjusted_accum_nav ? formatNumber(row.adjusted_accum_nav, 4) : '-' }}
+            </span>
+          </template>
+        </el-table-column>
+
         <!-- 涨跌幅 -->
         <el-table-column
           label="涨跌幅"
-          min-width="130"
+          width="120"
           align="center"
         >
           <template #default="{ row, $index }">
@@ -174,20 +194,6 @@
               :class="getChangeClass(row, $index)"
             >
               {{ calculateDailyChange(row, $index) }}
-            </span>
-            <span v-else class="text-muted">-</span>
-          </template>
-        </el-table-column>
-
-        <!-- 间隔天数 -->
-        <el-table-column
-          label="间隔天数"
-          min-width="120"
-          align="center"
-        >
-          <template #default="{ row, $index }">
-            <span v-if="$index < navRecords.length - 1">
-              {{ calculateDayGap(row, $index) }}
             </span>
             <span v-else class="text-muted">-</span>
           </template>
@@ -236,6 +242,7 @@ const tableLoading = ref(false)
 const fundInfo = ref({})
 const navRecords = ref([])
 const selectedNavs = ref([])
+const dividendDates = ref(new Set()) // 存储分红日期的Set
 
 // 计算数据缺失区间
 const dataGaps = computed(() => {
@@ -266,26 +273,49 @@ const hasGapWarning = computed(() => dataGaps.value.length > 0)
 const loadFundData = async () => {
   tableLoading.value = true
   try {
-    // 获取基金净值记录
-    const response = await navAPI.getNavByFund(fundCode.value, 10000)
-    navRecords.value = response.data.nav_records || []
+    const API_BASE = import.meta.env.PROD ? '' : 'http://localhost:8000'
 
-    // 按日期倒序排列
-    navRecords.value.sort((a, b) => {
-      const dateA = new Date(a.nav_date)
-      const dateB = new Date(b.nav_date)
-      return dateB - dateA
-    })
+    // 并发获取净值数据和分红数据
+    const [navResponse, dividendResponse] = await Promise.all([
+      fetch(`${API_BASE}/api/nav/fund/${fundCode.value}/with-adjusted-nav?limit=10000`),
+      fetch(`${API_BASE}/api/dividend/fund/${fundCode.value}/history`)
+    ])
 
-    // 如果有净值记录，获取基金信息
-    if (navRecords.value.length > 0) {
-      fundInfo.value = {
-        fund_code: fundCode.value,
-        fund_name: navRecords.value[0].fund_name || fundCode.value
+    const navResult = await navResponse.json()
+    const dividendResult = await dividendResponse.json()
+
+    if (navResult.success) {
+      navRecords.value = navResult.data.nav_records || []
+
+      // 按日期倒序排列
+      navRecords.value.sort((a, b) => {
+        const dateA = new Date(a.nav_date)
+        const dateB = new Date(b.nav_date)
+        return dateB - dateA
+      })
+
+      // 如果有净值记录，获取基金信息
+      if (navRecords.value.length > 0) {
+        fundInfo.value = {
+          fund_code: fundCode.value,
+          fund_name: navRecords.value[0].fund_name || fundCode.value
+        }
       }
+
+      console.log(`加载完成: 基金 ${fundCode.value} 共 ${navRecords.value.length} 条净值记录`)
+    } else {
+      throw new Error(navResult.message || '加载失败')
     }
 
-    console.log(`加载完成: 基金 ${fundCode.value} 共 ${navRecords.value.length} 条净值记录`)
+    // 处理分红数据
+    if (dividendResult.dividend_history && dividendResult.dividend_history.length > 0) {
+      const dates = new Set(
+        dividendResult.dividend_history.map(d => d.ex_dividend_date)
+      )
+      dividendDates.value = dates
+      console.log(`加载完成: 基金 ${fundCode.value} 共 ${dates.size} 次分红`)
+    }
+
   } catch (error) {
     console.error('加载基金数据失败:', error)
     ElMessage.error('加载基金数据失败')
@@ -306,27 +336,27 @@ const handleSelectionChange = (selection) => {
   selectedNavs.value = selection
 }
 
-// 计算日涨跌幅
+// 计算日涨跌幅（基于复权累计净值）
 const calculateDailyChange = (row, index) => {
   if (index >= navRecords.value.length - 1) return '-'
 
-  const currentNav = parseFloat(row.unit_nav)
-  const previousNav = parseFloat(navRecords.value[index + 1].unit_nav)
+  const currentAdjustedNav = row.adjusted_accum_nav || parseFloat(row.unit_nav)
+  const previousAdjustedNav = navRecords.value[index + 1].adjusted_accum_nav || parseFloat(navRecords.value[index + 1].unit_nav)
 
-  if (previousNav === 0) return '-'
+  if (previousAdjustedNav === 0) return '-'
 
-  const change = ((currentNav - previousNav) / previousNav) * 100
+  const change = ((currentAdjustedNav - previousAdjustedNav) / previousAdjustedNav) * 100
   const sign = change > 0 ? '+' : ''
   return `${sign}${change.toFixed(2)}%`
 }
 
-// 获取涨跌幅样式类
+// 获取涨跌幅样式类（基于复权累计净值）
 const getChangeClass = (row, index) => {
   if (index >= navRecords.value.length - 1) return ''
 
-  const currentNav = parseFloat(row.unit_nav)
-  const previousNav = parseFloat(navRecords.value[index + 1].unit_nav)
-  const change = currentNav - previousNav
+  const currentAdjustedNav = row.adjusted_accum_nav || parseFloat(row.unit_nav)
+  const previousAdjustedNav = navRecords.value[index + 1].adjusted_accum_nav || parseFloat(navRecords.value[index + 1].unit_nav)
+  const change = currentAdjustedNav - previousAdjustedNav
 
   if (change > 0) return 'text-success'
   if (change < 0) return 'text-danger'
@@ -573,6 +603,19 @@ onMounted(() => {
 
 .date-cell {
   font-family: 'Inter', 'SF Pro Display', 'Helvetica Neue', sans-serif;
+}
+
+.date-cell-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+
+.dividend-badge {
+  font-size: 11px;
+  color: #F56C6C;
+  font-weight: 600;
 }
 
 .nav-value {

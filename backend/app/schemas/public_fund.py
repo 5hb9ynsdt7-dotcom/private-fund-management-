@@ -71,6 +71,7 @@ class PublicFundResponse(PublicFundBase):
     id: int
     is_active: bool
     data_source: str
+    latest_nav_date: Optional[date] = Field(None, description="最新净值日期")
     created_at: datetime
     updated_at: datetime
 

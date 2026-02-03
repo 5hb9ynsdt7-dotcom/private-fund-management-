@@ -13,6 +13,7 @@ import logging
 from ..database import get_db
 from ..services.portfolio_service import PortfolioService
 from ..models_public_fund import PublicFund
+from ..models import Fund  # 添加私募基金模型
 from ..schemas.portfolio import (
     PortfolioCreate,
     PortfolioUpdate,
@@ -53,6 +54,8 @@ async def create_portfolio(
             description=new_portfolio.description,
             cash_balance=new_portfolio.cash_balance,
             is_active=new_portfolio.is_active,
+            portfolio_type=new_portfolio.portfolio_type,
+            update_frequency=new_portfolio.update_frequency,
             created_at=new_portfolio.created_at,
             updated_at=new_portfolio.updated_at,
             total_invested=Decimal('0'),
@@ -95,6 +98,8 @@ async def get_portfolio_list(
                     description=portfolio.description,
                     cash_balance=portfolio.cash_balance,
                     is_active=portfolio.is_active,
+                    portfolio_type=portfolio.portfolio_type,
+                    update_frequency=portfolio.update_frequency,
                     created_at=portfolio.created_at,
                     updated_at=portfolio.updated_at,
                     total_invested=portfolio.initial_amount,
@@ -112,6 +117,8 @@ async def get_portfolio_list(
                     description=portfolio.description,
                     cash_balance=portfolio.cash_balance,
                     is_active=portfolio.is_active,
+                    portfolio_type=portfolio.portfolio_type,
+                    update_frequency=portfolio.update_frequency,
                     created_at=portfolio.created_at,
                     updated_at=portfolio.updated_at,
                     total_invested=portfolio.initial_amount
@@ -158,8 +165,11 @@ async def get_portfolio_detail(
             # 从value_data中查找对应的详情
             pos_detail = next((p for p in value_data['positions'] if p['fund_code'] == pos.fund_code), None)
 
-            # 获取基金名称
-            fund = db.query(PublicFund).filter(PublicFund.fund_code == pos.fund_code).first()
+            # 根据组合类型获取基金名称
+            if portfolio.portfolio_type == 'private':
+                fund = db.query(Fund).filter(Fund.fund_code == pos.fund_code).first()
+            else:
+                fund = db.query(PublicFund).filter(PublicFund.fund_code == pos.fund_code).first()
 
             if pos_detail:
                 # 计算权重
@@ -187,7 +197,11 @@ async def get_portfolio_detail(
         transactions = service.get_transactions(portfolio_id, limit=100)
         transaction_responses = []
         for txn in transactions:
-            fund = db.query(PublicFund).filter(PublicFund.fund_code == txn.fund_code).first()
+            # 根据组合类型获取基金名称
+            if portfolio.portfolio_type == 'private':
+                fund = db.query(Fund).filter(Fund.fund_code == txn.fund_code).first()
+            else:
+                fund = db.query(PublicFund).filter(PublicFund.fund_code == txn.fund_code).first()
 
             transaction_responses.append(TransactionResponse(
                 id=txn.id,
@@ -228,6 +242,8 @@ async def get_portfolio_detail(
             description=portfolio.description,
             cash_balance=portfolio.cash_balance,
             is_active=portfolio.is_active,
+            portfolio_type=portfolio.portfolio_type,
+            update_frequency=portfolio.update_frequency,
             created_at=portfolio.created_at,
             updated_at=portfolio.updated_at,
             total_invested=portfolio.initial_amount,

@@ -13,7 +13,7 @@ import logging
 from pydantic import BaseModel
 
 from ..database import get_db
-from ..models import Fund, Nav, Strategy
+from ..models import Fund, Nav, Strategy, Dividend
 from ..schemas.common import APIResponse
 
 logger = logging.getLogger(__name__)
@@ -87,7 +87,8 @@ async def get_weekly_performance(
             Strategy.main_strategy,
             Strategy.sub_strategy,
             Nav.nav_date.label('latest_nav_date'),
-            Nav.accum_nav.label('latest_nav')
+            Nav.adjusted_accum_nav.label('latest_nav'),  # 使用复权累计净值
+            Nav.accum_nav.label('latest_accum_nav')  # 备用：累计净值
         ).join(
             latest_nav_subquery,
             and_(
@@ -130,11 +131,14 @@ async def get_weekly_performance(
         for fund in funds_data:
             fund_code = fund.fund_code
             latest_date = fund.latest_nav_date
-            latest_nav = fund.latest_nav
-            
+
+            # 确定使用哪种净值类型：优先使用adjusted_accum_nav，如果为空则使用accum_nav
+            use_adjusted = fund.latest_nav is not None
+            latest_nav = fund.latest_nav if use_adjusted else fund.latest_accum_nav
+
             # 计算一周前的日期（工作日逻辑）
             target_date = latest_date - timedelta(days=7)
-            
+
             # 查找一周前最近的净值记录
             previous_nav_record = db.query(Nav).filter(
                 and_(
@@ -142,15 +146,15 @@ async def get_weekly_performance(
                     Nav.nav_date <= target_date
                 )
             ).order_by(desc(Nav.nav_date)).first()
-            
+
             # 查找基金的第一个净值记录（成立净值）
             first_nav_record = db.query(Nav).filter(
                 Nav.fund_code == fund_code
             ).order_by(Nav.nav_date).first()
-            
+
             # 判断是否为今年成立的基金
             is_founded_this_year = first_nav_record and first_nav_record.nav_date >= year_start
-            
+
             if is_founded_this_year:
                 # 今年成立的基金，使用成立净值作为基准
                 ytd_nav_record = first_nav_record
@@ -162,28 +166,36 @@ async def get_weekly_performance(
                         Nav.nav_date < year_start
                     )
                 ).order_by(desc(Nav.nav_date)).first()
-            
+
             # 计算一周涨跌幅
             weekly_return = None
             previous_nav_date = None
             previous_nav = None
-            
-            if previous_nav_record and latest_nav and previous_nav_record.accum_nav:
-                previous_nav_date = previous_nav_record.nav_date
-                previous_nav = previous_nav_record.accum_nav
 
-                # 涨跌幅计算：(最新净值 - 前期净值) / 前期净值 * 100
-                weekly_return = float((latest_nav - previous_nav) / previous_nav * 100)
-            
+            if previous_nav_record and latest_nav:
+                # 使用与最新净值相同的类型
+                previous_nav_value = previous_nav_record.adjusted_accum_nav if use_adjusted else previous_nav_record.accum_nav
+
+                if previous_nav_value:
+                    previous_nav_date = previous_nav_record.nav_date
+                    previous_nav = previous_nav_value
+
+                    # 涨跌幅计算：(最新净值 - 前期净值) / 前期净值 * 100
+                    weekly_return = float((latest_nav - previous_nav) / previous_nav * 100)
+
             # 计算今年以来涨跌幅
             ytd_return = None
-            if ytd_nav_record and latest_nav and ytd_nav_record.accum_nav:
-                if is_founded_this_year:
-                    # 今年成立的基金：(最新净值 - 成立净值) / 成立净值 * 100
-                    ytd_return = float((latest_nav - ytd_nav_record.accum_nav) / ytd_nav_record.accum_nav * 100)
-                else:
-                    # 去年或更早成立的基金：(最新净值 - 上年最后一个净值) / 上年最后一个净值 * 100
-                    ytd_return = float((latest_nav - ytd_nav_record.accum_nav) / ytd_nav_record.accum_nav * 100)
+            if ytd_nav_record and latest_nav:
+                # 使用与最新净值相同的类型
+                ytd_nav_value = ytd_nav_record.adjusted_accum_nav if use_adjusted else ytd_nav_record.accum_nav
+
+                if ytd_nav_value:
+                    if is_founded_this_year:
+                        # 今年成立的基金：(最新净值 - 成立净值) / 成立净值 * 100
+                        ytd_return = float((latest_nav - ytd_nav_value) / ytd_nav_value * 100)
+                    else:
+                        # 去年或更早成立的基金：(最新净值 - 上年最后一个净值) / 上年最后一个净值 * 100
+                        ytd_return = float((latest_nav - ytd_nav_value) / ytd_nav_value * 100)
             
             # 应用涨跌筛选
             if performance_filter:
@@ -194,10 +206,15 @@ async def get_weekly_performance(
                 elif performance_filter == 'neutral' and (weekly_return is None or weekly_return != 0):
                     continue
             
+            # 如果short_name为空或以"基金_"开头，使用fund_name
+            display_name = fund.short_name
+            if not display_name or display_name.startswith('基金_'):
+                display_name = fund.fund_name
+
             performance_item = StagePerformanceResponse(
                 fund_code=fund_code,
                 fund_name=fund.fund_name,
-                short_name=fund.short_name,
+                short_name=display_name,
                 major_strategy=fund.main_strategy,
                 sub_strategy=fund.sub_strategy,
                 latest_nav_date=latest_date,
@@ -321,37 +338,45 @@ async def get_period_performance(
         
         for fund in funds:
             # 获取结束日期最近的净值
-            end_nav = db.query(Nav).filter(
+            end_nav_record = db.query(Nav).filter(
                 and_(
                     Nav.fund_code == fund.fund_code,
                     Nav.nav_date <= end_date
                 )
             ).order_by(desc(Nav.nav_date)).first()
-            
+
             # 获取开始日期最近的净值
-            start_nav = db.query(Nav).filter(
+            start_nav_record = db.query(Nav).filter(
                 and_(
                     Nav.fund_code == fund.fund_code,
                     Nav.nav_date >= start_date
                 )
             ).order_by(Nav.nav_date).first()
-            
-            if end_nav and start_nav and start_nav.accum_nav:
-                period_return = float((end_nav.accum_nav - start_nav.accum_nav) / start_nav.accum_nav * 100)
+
+            if end_nav_record and start_nav_record:
+                # 确定使用哪种净值类型：优先使用adjusted_accum_nav，如果结束日期的为空则使用accum_nav
+                use_adjusted = end_nav_record.adjusted_accum_nav is not None
+
+                # 使用相同类型的净值
+                end_nav_value = end_nav_record.adjusted_accum_nav if use_adjusted else end_nav_record.accum_nav
+                start_nav_value = start_nav_record.adjusted_accum_nav if use_adjusted else start_nav_record.accum_nav
+
+                if end_nav_value and start_nav_value:
+                    period_return = float((end_nav_value - start_nav_value) / start_nav_value * 100)
                 
                 # 计算今年以来涨跌幅 - 使用最新净值和年初净值
                 ytd_return = None
                 today = date.today()
                 year_start = date(today.year, 1, 1)
-                
+
                 # 查找基金的第一个净值记录（成立净值）
                 first_nav_record = db.query(Nav).filter(
                     Nav.fund_code == fund.fund_code
                 ).order_by(Nav.nav_date).first()
-                
+
                 # 判断是否为今年成立的基金
                 is_founded_this_year = first_nav_record and first_nav_record.nav_date >= year_start
-                
+
                 if is_founded_this_year:
                     # 今年成立的基金，使用成立净值作为基准
                     ytd_nav_record = first_nav_record
@@ -363,29 +388,39 @@ async def get_period_performance(
                             Nav.nav_date < year_start
                         )
                     ).order_by(desc(Nav.nav_date)).first()
-                
-                if ytd_nav_record and end_nav and ytd_nav_record.accum_nav:
-                    if is_founded_this_year:
-                        # 今年成立的基金：(最新净值 - 成立净值) / 成立净值 * 100
-                        ytd_return = float((end_nav.accum_nav - ytd_nav_record.accum_nav) / ytd_nav_record.accum_nav * 100)
-                    else:
-                        # 去年或更早成立的基金：(最新净值 - 上年最后一个净值) / 上年最后一个净值 * 100
-                        ytd_return = float((end_nav.accum_nav - ytd_nav_record.accum_nav) / ytd_nav_record.accum_nav * 100)
-                
+
+                if ytd_nav_record and end_nav_record:
+                    # 使用与结束日期净值相同的类型
+                    ytd_nav_value = ytd_nav_record.adjusted_accum_nav if use_adjusted else ytd_nav_record.accum_nav
+                    end_nav_value_for_ytd = end_nav_record.adjusted_accum_nav if use_adjusted else end_nav_record.accum_nav
+
+                    if ytd_nav_value and end_nav_value_for_ytd:
+                        if is_founded_this_year:
+                            # 今年成立的基金：(最新净值 - 成立净值) / 成立净值 * 100
+                            ytd_return = float((end_nav_value_for_ytd - ytd_nav_value) / ytd_nav_value * 100)
+                        else:
+                            # 去年或更早成立的基金：(最新净值 - 上年最后一个净值) / 上年最后一个净值 * 100
+                            ytd_return = float((end_nav_value_for_ytd - ytd_nav_value) / ytd_nav_value * 100)
+
+                # 如果short_name为空或以"基金_"开头，使用fund_name
+                display_name = fund.short_name
+                if not display_name or display_name.startswith('基金_'):
+                    display_name = fund.fund_name
+
                 performance_item = {
                     "fund_code": fund.fund_code,
                     "fund_name": fund.fund_name,
-                    "short_name": fund.short_name,
+                    "short_name": display_name,
                     "major_strategy": fund.main_strategy,
                     "sub_strategy": fund.sub_strategy,
-                    "start_nav_date": start_nav.nav_date,
-                    "start_nav": start_nav.accum_nav,
-                    "end_nav_date": end_nav.nav_date,
-                    "end_nav": end_nav.accum_nav,
+                    "start_nav_date": start_nav_record.nav_date,
+                    "start_nav": start_nav_value,
+                    "end_nav_date": end_nav_record.nav_date,
+                    "end_nav": end_nav_value,
                     "period_return": period_return,
                     "ytd_return": ytd_return
                 }
-                
+
                 performance_data.append(performance_item)
         
         return APIResponse(
