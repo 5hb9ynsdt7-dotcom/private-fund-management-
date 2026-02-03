@@ -616,79 +616,80 @@ class PerformancePKService:
         calmar = (annual_return / max_drawdown) if max_drawdown > 0 else 0
 
         # === 月度收益（按年份组织）===
-        monthly_data['year'] = monthly_data['year_month'].dt.year
-        monthly_data['month'] = monthly_data['year_month'].dt.month
-
-        # 构建月末净值字典
-        month_end_nav_dict = {}
-        for i, row in month_end_df.iterrows():
-            ym = str(row['year_month'])
-            month_end_nav_dict[ym] = row['nav']
-
-        # 从月末净值中提取所有年份（包括只有1个月数据的年份）
-        all_years_set = set()
-        for i, row in month_end_df.iterrows():
-            year = row['year_month'].year
-            all_years_set.add(year)
-
-        # 也包含有月度收益的年份
-        if len(monthly_data) > 0:
-            all_years_set.update(monthly_data['year'].unique())
-
-        year_list = sorted(all_years_set, reverse=True)
-
         monthly_returns_by_year = {}
 
-        for year in year_list:
-            year_data = monthly_data[monthly_data['year'] == year]
+        # 如果monthly_data为空（产品刚成立，只有一个月的数据），跳过月度收益计算
+        if len(monthly_data) > 0:
+            monthly_data['year'] = monthly_data['year_month'].dt.year
+            monthly_data['month'] = monthly_data['year_month'].dt.month
 
-            # 创建12个月的数据
-            monthly_returns = {}
-            for month in range(1, 13):
-                month_data = year_data[year_data['month'] == month]
-                if len(month_data) > 0:
-                    monthly_returns[f'm{month}'] = round(month_data['monthly_return'].iloc[0], 2)
-                else:
-                    monthly_returns[f'm{month}'] = None
+            # 构建月末净值字典
+            month_end_nav_dict = {}
+            for i, row in month_end_df.iterrows():
+                ym = str(row['year_month'])
+                month_end_nav_dict[ym] = row['nav']
 
-            # 计算该年度的年度收益
-            # 优先使用：本年最后一个月末净值 / 去年12月末净值 - 1
-            prev_year_end_ym = f"{year-1}-12"
+            # 从月末净值中提取所有年份（包括只有1个月数据的年份）
+            all_years_set = set()
+            for i, row in month_end_df.iterrows():
+                year = row['year_month'].year
+                all_years_set.add(year)
 
-            # 找到该年最后一个有数据的月份
-            year_months = year_data['year_month'].sort_values()
-            if len(year_months) > 0:
-                last_month_ym = str(year_months.iloc[-1])
+            # 也包含有月度收益的年份
+            all_years_set.update(monthly_data['year'].unique())
 
-                # 如果有去年12月的数据，使用去年12月作为基准
-                if prev_year_end_ym in month_end_nav_dict and last_month_ym in month_end_nav_dict:
-                    prev_year_end_nav = month_end_nav_dict[prev_year_end_ym]
-                    last_nav = month_end_nav_dict[last_month_ym]
-                    year_total_return = round((last_nav / prev_year_end_nav - 1) * 100, 2)
-                else:
-                    # 如果没有去年12月的数据（说明是成立第一年），使用该年第一个月作为起点
-                    first_month_ym = str(year_months.iloc[0])
-                    if first_month_ym in month_end_nav_dict and last_month_ym in month_end_nav_dict:
-                        first_nav = month_end_nav_dict[first_month_ym]
-                        last_nav = month_end_nav_dict[last_month_ym]
-                        year_total_return = round((last_nav / first_nav - 1) * 100, 2)
+            year_list = sorted(all_years_set, reverse=True)
+
+            for year in year_list:
+                year_data = monthly_data[monthly_data['year'] == year]
+
+                # 创建12个月的数据
+                monthly_returns = {}
+                for month in range(1, 13):
+                    month_data = year_data[year_data['month'] == month]
+                    if len(month_data) > 0:
+                        monthly_returns[f'm{month}'] = round(month_data['monthly_return'].iloc[0], 2)
                     else:
-                        year_total_return = None
-            else:
-                year_total_return = None
+                        monthly_returns[f'm{month}'] = None
 
-            # 计算月度胜率
-            valid_months = [v for v in monthly_returns.values() if v is not None]
-            if valid_months:
-                win_count = sum(1 for v in valid_months if v > 0)
-                win_rate = round(win_count / len(valid_months) * 100, 2)
-            else:
-                win_rate = None
+                # 计算该年度的年度收益
+                # 优先使用：本年最后一个月末净值 / 去年12月末净值 - 1
+                prev_year_end_ym = f"{year-1}-12"
 
-            monthly_returns['year_return'] = year_total_return
-            monthly_returns['win_rate'] = win_rate
+                # 找到该年最后一个有数据的月份
+                year_months = year_data['year_month'].sort_values()
+                if len(year_months) > 0:
+                    last_month_ym = str(year_months.iloc[-1])
 
-            monthly_returns_by_year[int(year)] = monthly_returns
+                    # 如果有去年12月的数据，使用去年12月作为基准
+                    if prev_year_end_ym in month_end_nav_dict and last_month_ym in month_end_nav_dict:
+                        prev_year_end_nav = month_end_nav_dict[prev_year_end_ym]
+                        last_nav = month_end_nav_dict[last_month_ym]
+                        year_total_return = round((last_nav / prev_year_end_nav - 1) * 100, 2)
+                    else:
+                        # 如果没有去年12月的数据（说明是成立第一年），使用该年第一个月作为起点
+                        first_month_ym = str(year_months.iloc[0])
+                        if first_month_ym in month_end_nav_dict and last_month_ym in month_end_nav_dict:
+                            first_nav = month_end_nav_dict[first_month_ym]
+                            last_nav = month_end_nav_dict[last_month_ym]
+                            year_total_return = round((last_nav / first_nav - 1) * 100, 2)
+                        else:
+                            year_total_return = None
+                else:
+                    year_total_return = None
+
+                # 计算月度胜率
+                valid_months = [v for v in monthly_returns.values() if v is not None]
+                if valid_months:
+                    win_count = sum(1 for v in valid_months if v > 0)
+                    win_rate = round(win_count / len(valid_months) * 100, 2)
+                else:
+                    win_rate = None
+
+                monthly_returns['year_return'] = year_total_return
+                monthly_returns['win_rate'] = win_rate
+
+                monthly_returns_by_year[int(year)] = monthly_returns
 
         return {
             'name': name,

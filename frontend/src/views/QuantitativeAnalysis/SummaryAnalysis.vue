@@ -658,13 +658,15 @@ const handleCalculatePeriod = async () => {
 
     periodExcessData.value = Object.values(productMap)
 
-    // 保存计算结果到localStorage
+    // 保存计算结果到localStorage（key包含日期范围）
+    const dateKey = `${customDateRange.value[0]}_${customDateRange.value[1]}`
+    const cacheKey = `periodExcessCache_${dateKey}`
     const cacheData = {
       data: Object.values(productMap),
       timestamp: new Date().toISOString(),
       dateRange: customDateRange.value
     }
-    localStorage.setItem('periodExcessCache', JSON.stringify(cacheData))
+    localStorage.setItem(cacheKey, JSON.stringify(cacheData))
 
     ElMessage.success('区间超额收益计算完成')
   } catch (error) {
@@ -1153,15 +1155,19 @@ const loadCachedResults = () => {
     }
   }
 
-  // 加载区间超额缓存
-  const periodCache = localStorage.getItem('periodExcessCache')
-  if (periodCache) {
-    try {
-      const cached = JSON.parse(periodCache)
-      periodExcessData.value = cached.data || []
-      console.log(`已加载区间超额缓存数据 (${cached.timestamp})`)
-    } catch (e) {
-      console.error('加载区间超额缓存失败:', e)
+  // 加载区间超额缓存（基于日期范围）
+  if (customDateRange.value && customDateRange.value.length === 2) {
+    const dateKey = `${customDateRange.value[0]}_${customDateRange.value[1]}`
+    const cacheKey = `periodExcessCache_${dateKey}`
+    const periodCache = localStorage.getItem(cacheKey)
+    if (periodCache) {
+      try {
+        const cached = JSON.parse(periodCache)
+        periodExcessData.value = cached.data || []
+        console.log(`已加载区间超额缓存数据 (${cached.timestamp}, 日期: ${cached.dateRange})`)
+      } catch (e) {
+        console.error('加载区间超额缓存失败:', e)
+      }
     }
   }
 }

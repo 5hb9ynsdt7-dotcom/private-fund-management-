@@ -275,54 +275,6 @@ class QuantitativeService:
         # 返回所有净值日期（按周五优先排序，但保留所有更新日）
         return month_navs['date'].tolist()
 
-    def _get_dividends_for_fund(self, fund_code: str) -> Dict[str, float]:
-        """
-        获取基金的分红数据
-        返回: {除息日: 除权前净值}
-        """
-        if not self.db:
-            return {}
-
-        try:
-            from ..models import Dividend
-
-            dividends = self.db.query(Dividend).filter(
-                Dividend.fund_code == fund_code,
-                Dividend.pre_dividend_nav.isnot(None),
-                Dividend.ex_dividend_date.isnot(None)
-            ).all()
-
-            dividend_dict = {}
-            for div in dividends:
-                date_str = div.ex_dividend_date.strftime('%Y-%m-%d')
-                dividend_dict[date_str] = float(div.pre_dividend_nav)
-
-            return dividend_dict
-        except Exception as e:
-            print(f"获取分红数据失败: {e}")
-            return {}
-
-    def _adjust_nav_for_dividend(self, nav_value: float, nav_date: pd.Timestamp,
-                                 fund_code: str, dividends: Dict[str, float]) -> float:
-        """
-        如果nav_date是除息日，使用除权前净值替代数据库中的净值
-
-        Args:
-            nav_value: 数据库中的净值
-            nav_date: 净值日期
-            fund_code: 基金代码
-            dividends: 分红数据字典 {除息日: 除权前净值}
-
-        Returns:
-            调整后的净值（如果是除息日则返回除权前净值，否则返回原值）
-        """
-        date_str = nav_date.strftime('%Y-%m-%d')
-        if date_str in dividends:
-            pre_div_nav = dividends[date_str]
-            print(f"  → 检测到分红调整: {fund_code} {date_str}, 使用除权前净值 {pre_div_nav} 替代数据库净值 {nav_value:.4f}")
-            return pre_div_nav
-        return nav_value
-
     def calculate_monthly_excess(
         self,
         nav_data: List,
@@ -333,15 +285,12 @@ class QuantitativeService:
         """
         计算月度超额收益
         使用周复利累计方法：月度超额 = [(1+周1超额)×(1+周2超额)×...×(1+周n超额)] - 1
-        使用单位净值，并在除息日使用除权前净值进行调整
+        使用复权累计净值（adjusted_accum_nav），自动考虑分红影响
         """
-        # 获取分红数据
-        dividends = self._get_dividends_for_fund(fund_code) if fund_code else {}
-
-        # 转换为DataFrame（使用单位净值）
+        # 转换为DataFrame（使用复权累计净值）
         nav_df = pd.DataFrame([{
             "date": pd.to_datetime(nav.nav_date),
-            "nav": float(nav.unit_nav),
+            "nav": float(nav.adjusted_accum_nav) if nav.adjusted_accum_nav else float(nav.unit_nav),
             "fund_code": fund_code
         } for nav in nav_data])
 
@@ -397,25 +346,17 @@ class QuantitativeService:
                 if week_end_data is None:
                     continue
 
-                # 分红调整：如果week_end_date是除息日，使用除权前净值
-                adjusted_nav = self._adjust_nav_for_dividend(
-                    week_end_data['nav'],
-                    week_end_date,
-                    fund_code,
-                    dividends
-                )
-
-                # 计算周收益率（使用调整后的净值）
-                nav_return = (adjusted_nav / prev_nav - 1)
+                # 使用复权累计净值，直接计算周收益率（不需要手动分红调整）
+                nav_return = (week_end_data['nav'] / prev_nav - 1)
                 index_return = (week_end_data['index'] / prev_index - 1)
                 weekly_excess = nav_return - index_return
 
                 # 复利累计
                 compound_factor *= (1 + weekly_excess)
 
-                # 更新为下一周的期初（使用除权后的净值，即数据库中的实际净值）
+                # 更新为下一周的期初
                 prev_date = week_end_data['date']
-                prev_nav = week_end_data['nav']  # 使用数据库中的净值（除权后）
+                prev_nav = week_end_data['nav']
                 prev_index = week_end_data['index']
 
             # 计算月度超额收益
@@ -454,15 +395,12 @@ class QuantitativeService:
         """
         计算年度超额收益
         使用月度复利累计方法：年度超额 = [(1+月1超额)×(1+月2超额)×...×(1+月12超额)] - 1
-        使用单位净值，并在除息日使用除权前净值进行调整
+        使用复权累计净值（adjusted_accum_nav），自动考虑分红影响
         """
-        # 获取分红数据
-        dividends = self._get_dividends_for_fund(fund_code) if fund_code else {}
-
-        # 转换为DataFrame（使用单位净值）
+        # 转换为DataFrame（使用复权累计净值）
         nav_df = pd.DataFrame([{
             "date": pd.to_datetime(nav.nav_date),
-            "nav": float(nav.unit_nav)
+            "nav": float(nav.adjusted_accum_nav) if nav.adjusted_accum_nav else float(nav.unit_nav)
         } for nav in nav_data])
 
         index_df = pd.DataFrame(index_data)
@@ -515,23 +453,15 @@ class QuantitativeService:
                     if week_end_data is None:
                         continue
 
-                    # 分红调整：如果week_end_date是除息日，使用除权前净值
-                    adjusted_nav = self._adjust_nav_for_dividend(
-                        week_end_data['nav'],
-                        week_end_date,
-                        fund_code,
-                        dividends
-                    )
-
-                    # 计算周收益率（使用调整后的净值）
-                    nav_return = (adjusted_nav / prev_nav - 1)
+                    # 使用复权累计净值，直接计算周收益率（不需要手动分红调整）
+                    nav_return = (week_end_data['nav'] / prev_nav - 1)
                     index_return = (week_end_data['index'] / prev_index - 1)
                     weekly_excess = nav_return - index_return
 
                     # 复利累计
                     compound_factor *= (1 + weekly_excess)
 
-                    # 更新为下一周的期初（使用除权后的净值）
+                    # 更新为下一周的期初
                     prev_nav = week_end_data['nav']
                     prev_index = week_end_data['index']
 
@@ -567,17 +497,19 @@ class QuantitativeService:
     ) -> Dict[str, Any]:
         """
         计算区间超额收益
-        优先使用复权累计净值（adjusted_accum_nav），自动考虑分红影响
-        如果没有复权累计净值，则使用单位净值并进行分红调整
+        使用复权累计净值（adjusted_accum_nav），自动考虑分红影响
         """
-        # 获取分红数据（用于回退逻辑）
-        dividends = self._get_dividends_for_fund(fund_code) if fund_code else {}
-
-        # 转换为DataFrame（优先使用复权累计净值）
+        # 转换为DataFrame（使用复权累计净值）
         nav_df = pd.DataFrame([{
             "date": pd.to_datetime(nav.nav_date),
             "nav": float(nav.adjusted_accum_nav) if nav.adjusted_accum_nav else float(nav.unit_nav)
         } for nav in nav_data])
+
+        # DEBUG: 输出使用的净值类型
+        if fund_code and len(nav_data) > 0:
+            first_nav = nav_data[0]
+            has_adjusted = first_nav.adjusted_accum_nav is not None
+            print(f"DEBUG [{fund_code}]: 使用净值类型 = {'adjusted_accum_nav' if has_adjusted else 'unit_nav'}, 共{len(nav_data)}条")
 
         index_df = pd.DataFrame(index_data)
         index_df['date'] = pd.to_datetime(index_df['date'])
@@ -594,7 +526,14 @@ class QuantitativeService:
         end_data = self._align_data_by_date(nav_df, index_df, end_ts, 'backward')
 
         if start_data is None or end_data is None:
+            if fund_code:
+                print(f"DEBUG [{fund_code}]: 数据对齐失败 - start_data={'None' if start_data is None else 'OK'}, end_data={'None' if end_data is None else 'OK'}")
             return {}
+
+        # DEBUG: 输出期初期末数据
+        if fund_code:
+            print(f"DEBUG [{fund_code}]: 期初 {start_data['date'].strftime('%Y-%m-%d')} nav={start_data['nav']:.4f}")
+            print(f"DEBUG [{fund_code}]: 期末 {end_data['date'].strftime('%Y-%m-%d')} nav={end_data['nav']:.4f}")
 
         # 使用复权累计净值，直接计算收益，不需要复杂的分红调整
         # 计算产品收益率
@@ -605,6 +544,10 @@ class QuantitativeService:
 
         # 计算超额收益
         excess_return = product_return - index_return
+
+        # DEBUG: 输出计算结果
+        if fund_code:
+            print(f"DEBUG [{fund_code}]: 产品收益={product_return:.2f}%, 指数收益={index_return:.2f}%, 超额={excess_return:.2f}%")
 
         # 筛选区间内的数据来计算回撤
         period_nav = nav_df[(nav_df['date'] >= start_data['date']) & (nav_df['date'] <= end_data['date'])]
@@ -659,11 +602,12 @@ class QuantitativeService:
     ) -> Dict[str, Any]:
         """
         计算风险指标
+        使用复权累计净值（adjusted_accum_nav），自动考虑分红影响
         """
-        # 转换为DataFrame
+        # 转换为DataFrame（使用复权累计净值）
         nav_df = pd.DataFrame([{
             "date": pd.to_datetime(nav.nav_date),
-            "nav": float(nav.unit_nav)
+            "nav": float(nav.adjusted_accum_nav) if nav.adjusted_accum_nav else float(nav.unit_nav)
         } for nav in nav_data])
 
         index_df = pd.DataFrame(index_data)
@@ -737,15 +681,12 @@ class QuantitativeService:
         """
         计算周度累计超额曲线数据（考虑分红影响）
         返回格式: [{"date": "2024-01-05", "cumExcessReturn": 1.5}, ...]
-        使用与月度超额相同的周度计算逻辑，确保分红处理一致
+        使用复权累计净值（adjusted_accum_nav），自动考虑分红影响
         """
-        # 获取分红数据
-        dividends = self._get_dividends_for_fund(fund_code) if fund_code else {}
-
-        # 转换为DataFrame
+        # 转换为DataFrame（使用复权累计净值）
         nav_df = pd.DataFrame([{
             "date": pd.to_datetime(nav.nav_date),
-            "nav": float(nav.unit_nav)
+            "nav": float(nav.adjusted_accum_nav) if nav.adjusted_accum_nav else float(nav.unit_nav)
         } for nav in nav_data])
 
         index_df = pd.DataFrame(index_data)
@@ -801,16 +742,8 @@ class QuantitativeService:
             if current_data is None:
                 continue
 
-            # 分红调整：如果current_date是除息日，使用除权前净值
-            adjusted_nav = self._adjust_nav_for_dividend(
-                current_data['nav'],
-                current_date,
-                fund_code,
-                dividends
-            )
-
-            # 计算周收益率（使用调整后的净值）
-            nav_return = (adjusted_nav / prev_nav - 1)
+            # 使用复权累计净值，直接计算周收益率（不需要手动分红调整）
+            nav_return = (current_data['nav'] / prev_nav - 1)
             index_return = (current_data['index'] / prev_index - 1)
             weekly_excess = nav_return - index_return
 
@@ -825,7 +758,7 @@ class QuantitativeService:
                 "cumExcessReturn": round(cum_excess_pct, 2)
             })
 
-            # 更新为下一周的期初（使用除权后的净值，即数据库中的实际净值）
+            # 更新为下一周的期初
             prev_nav = current_data['nav']
             prev_index = current_data['index']
 

@@ -652,3 +652,105 @@ async def get_nav_with_adjusted_accum(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"获取带复权累计净值失败: {str(e)}"
         )
+
+
+@router.post("/recalculate-adjusted", response_model=APIResponse, summary="重新计算复权累计净值")
+async def recalculate_adjusted_nav(
+    fund_code: Optional[str] = Query(None, description="基金代码，不提供则计算所有基金"),
+    db: Session = Depends(get_db)
+):
+    """
+    重新计算复权累计净值
+
+    - **fund_code**: 可选，指定基金代码。如果不提供，则计算所有基金的复权累计净值
+    - **返回**: 更新统计信息
+
+    使用场景：
+    1. 导入新净值后，手动触发计算复权累计净值
+    2. 修改分红数据后，重新计算受影响基金的复权累计净值
+    3. 数据修复：发现复权累计净值错误时，重新计算
+    """
+    try:
+        nav_service = NavService(db)
+
+        if fund_code:
+            # 计算指定基金
+            fund = db.query(Fund).filter(Fund.fund_code == fund_code).first()
+            if not fund:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"基金 {fund_code} 不存在"
+                )
+
+            # 获取该基金的所有净值
+            navs = db.query(Nav).filter(
+                Nav.fund_code == fund_code
+            ).order_by(Nav.nav_date).all()
+
+            if not navs:
+                return APIResponse(
+                    success=True,
+                    message=f"基金 {fund_code} 没有净值记录",
+                    data={"updated_count": 0}
+                )
+
+            # 重新计算每条净值的复权累计净值
+            updated_count = 0
+            for nav in navs:
+                adjusted_nav = nav_service.calculate_adjusted_accum_nav(fund_code, nav.nav_date)
+                if adjusted_nav is not None:
+                    nav.adjusted_accum_nav = adjusted_nav
+                    updated_count += 1
+
+            db.commit()
+
+            return APIResponse(
+                success=True,
+                message=f"成功重新计算基金 {fund.fund_name} 的复权累计净值",
+                data={
+                    "fund_code": fund_code,
+                    "fund_name": fund.fund_name,
+                    "updated_count": updated_count
+                }
+            )
+        else:
+            # 计算所有基金
+            funds = db.query(Fund).all()
+            total_updated = 0
+            fund_count = 0
+
+            for fund in funds:
+                navs = db.query(Nav).filter(
+                    Nav.fund_code == fund.fund_code
+                ).order_by(Nav.nav_date).all()
+
+                if not navs:
+                    continue
+
+                fund_count += 1
+                for nav in navs:
+                    adjusted_nav = nav_service.calculate_adjusted_accum_nav(fund.fund_code, nav.nav_date)
+                    if adjusted_nav is not None:
+                        nav.adjusted_accum_nav = adjusted_nav
+                        total_updated += 1
+
+            db.commit()
+
+            return APIResponse(
+                success=True,
+                message=f"成功重新计算 {fund_count} 个基金的复权累计净值",
+                data={
+                    "fund_count": fund_count,
+                    "updated_count": total_updated
+                }
+            )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"重新计算复权累计净值失败: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"重新计算复权累计净值失败: {str(e)}"
+        )

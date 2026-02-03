@@ -206,10 +206,15 @@ async def get_weekly_performance(
                 elif performance_filter == 'neutral' and (weekly_return is None or weekly_return != 0):
                     continue
             
+            # 如果short_name为空或以"基金_"开头，使用fund_name
+            display_name = fund.short_name
+            if not display_name or display_name.startswith('基金_'):
+                display_name = fund.fund_name
+
             performance_item = StagePerformanceResponse(
                 fund_code=fund_code,
                 fund_name=fund.fund_name,
-                short_name=fund.short_name,
+                short_name=display_name,
                 major_strategy=fund.main_strategy,
                 sub_strategy=fund.sub_strategy,
                 latest_nav_date=latest_date,
@@ -396,11 +401,16 @@ async def get_period_performance(
                         else:
                             # 去年或更早成立的基金：(最新净值 - 上年最后一个净值) / 上年最后一个净值 * 100
                             ytd_return = float((end_nav_value_for_ytd - ytd_nav_value) / ytd_nav_value * 100)
-                
+
+                # 如果short_name为空或以"基金_"开头，使用fund_name
+                display_name = fund.short_name
+                if not display_name or display_name.startswith('基金_'):
+                    display_name = fund.fund_name
+
                 performance_item = {
                     "fund_code": fund.fund_code,
                     "fund_name": fund.fund_name,
-                    "short_name": fund.short_name,
+                    "short_name": display_name,
                     "major_strategy": fund.main_strategy,
                     "sub_strategy": fund.sub_strategy,
                     "start_nav_date": start_nav_record.nav_date,

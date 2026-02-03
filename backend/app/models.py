@@ -40,12 +40,18 @@ class Fund(Base):
     def generate_short_name(fund_name: str) -> str:
         """
         根据基金全名生成简称
-        规则：去除"龙舟-"前缀和"私募证券投资基金"等后缀
+        规则：去除"龙舟-"前缀和"私募证券投资基金"等后缀，保留期数信息
 
         示例：
         - 龙舟-致远精选六号私募证券投资基金 -> 致远精选六号
         - 龙舟-上海宽德飞虹2期私募证券投资基金 -> 上海宽德飞虹2期
+        - 凯丰宏观策略诺享1号证券投资 -> 凯丰宏观策略诺享1号
+        - 泓湖诺亚十一号宏观策略私募证券投资基金 -> 泓湖诺亚十一号宏观策略
+        - 歌斐锐联量化A股策略私募基金1期 -> 歌斐锐联量化A股策略1期
+        - 明汯多策略对冲1号私募证券投资基金J期 -> 明汯多策略对冲1号J期
         """
+        import re
+
         if not fund_name:
             return fund_name
 
@@ -58,17 +64,21 @@ class Fund(Base):
                 short = short[len(prefix):]
                 break
 
-        # 去除后缀
-        suffixes = [
-            '私募证券投资基金',
-            '私募投资基金',
-            '证券投资基金',
-            '私募基金',
-            '投资基金'
+        # 去除后缀（按顺序尝试，优先匹配更长的后缀）
+        # 使用正则表达式处理带期数的情况
+        suffixes_patterns = [
+            (r'私募证券投资基金([A-Z]?\d*期)?$', r'\1'),  # 处理"私募证券投资基金"和"私募证券投资基金X期/J期"
+            (r'私募投资基金([A-Z]?\d*期)?$', r'\1'),
+            (r'证券投资基金([A-Z]?\d*期)?$', r'\1'),
+            (r'私募基金(\d+期)$', r'\1'),  # 保留期数，如"私募基金1期" -> "1期"
+            (r'投资基金([A-Z]?\d*期)?$', r'\1'),
+            (r'证券投资$', ''),
         ]
-        for suffix in suffixes:
-            if short.endswith(suffix):
-                short = short[:-len(suffix)]
+
+        for pattern, replacement in suffixes_patterns:
+            match = re.search(pattern, short)
+            if match:
+                short = re.sub(pattern, replacement, short)
                 break
 
         return short.strip()
