@@ -206,9 +206,11 @@ const mainLayoutClass = computed(() => {
   padding: 24px;
 }
 
-/* 表格布局：彻底移除所有可能的右侧留白 */
+/* 表格布局：移除外层padding，让内容自己控制间距 */
 .el-main.layout-table {
   padding: 0 !important;
+  overflow-x: hidden;
+  width: 100%;
 }
 
 /* Element Plus scrollbar 在表格页不预留空间 */

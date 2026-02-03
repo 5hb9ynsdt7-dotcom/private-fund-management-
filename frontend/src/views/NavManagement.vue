@@ -1172,7 +1172,9 @@ onMounted(() => {
 
 <style scoped>
 .nav-management {
-  padding: 20px;
+  padding: 24px;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 .page-header {
@@ -1219,6 +1221,21 @@ onMounted(() => {
 
 .table-section {
   margin-bottom: 24px;
+  width: 100%;
+}
+
+/* 确保表格容器占满宽度 */
+.table-section :deep(.el-card__body) {
+  padding: 0;
+}
+
+.table-section :deep(.el-table) {
+  width: 100%;
+}
+
+.table-section :deep(.table-header),
+.table-section :deep(.search-bar) {
+  padding: 16px 20px;
 }
 
 /* 分红标记样式 */
