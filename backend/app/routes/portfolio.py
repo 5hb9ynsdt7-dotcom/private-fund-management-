@@ -168,8 +168,11 @@ async def get_portfolio_detail(
             # 根据组合类型获取基金名称
             if portfolio.portfolio_type == 'private':
                 fund = db.query(Fund).filter(Fund.fund_code == pos.fund_code).first()
+                # 私募基金优先使用简称，如果没有简称则使用全名
+                fund_display_name = (fund.short_name or fund.fund_name) if fund else None
             else:
                 fund = db.query(PublicFund).filter(PublicFund.fund_code == pos.fund_code).first()
+                fund_display_name = fund.fund_name if fund else None
 
             if pos_detail:
                 # 计算权重
@@ -179,7 +182,7 @@ async def get_portfolio_detail(
                     id=pos.id,
                     portfolio_id=pos.portfolio_id,
                     fund_code=pos.fund_code,
-                    fund_name=fund.fund_name if fund else None,
+                    fund_name=fund_display_name,
                     shares=pos.shares,
                     cost_amount=pos.cost_amount,
                     avg_cost_nav=pos.avg_cost_nav,
@@ -200,14 +203,17 @@ async def get_portfolio_detail(
             # 根据组合类型获取基金名称
             if portfolio.portfolio_type == 'private':
                 fund = db.query(Fund).filter(Fund.fund_code == txn.fund_code).first()
+                # 私募基金优先使用简称，如果没有简称则使用全名
+                fund_display_name = (fund.short_name or fund.fund_name) if fund else None
             else:
                 fund = db.query(PublicFund).filter(PublicFund.fund_code == txn.fund_code).first()
+                fund_display_name = fund.fund_name if fund else None
 
             transaction_responses.append(TransactionResponse(
                 id=txn.id,
                 portfolio_id=txn.portfolio_id,
                 fund_code=txn.fund_code,
-                fund_name=fund.fund_name if fund else None,
+                fund_name=fund_display_name,
                 transaction_type=txn.transaction_type,
                 transaction_date=txn.transaction_date,
                 amount=txn.amount,
@@ -361,14 +367,21 @@ async def add_transaction(
         # 交易后自动保存净值快照
         service.save_portfolio_nav(portfolio_id, transaction.transaction_date)
 
-        # 获取基金名称
-        fund = db.query(PublicFund).filter(PublicFund.fund_code == new_transaction.fund_code).first()
+        # 获取组合类型，根据类型查询基金名称
+        portfolio = service.get_portfolio(portfolio_id)
+        if portfolio.portfolio_type == 'private':
+            fund = db.query(Fund).filter(Fund.fund_code == new_transaction.fund_code).first()
+            # 私募基金优先使用简称，如果没有简称则使用全名
+            fund_display_name = (fund.short_name or fund.fund_name) if fund else None
+        else:
+            fund = db.query(PublicFund).filter(PublicFund.fund_code == new_transaction.fund_code).first()
+            fund_display_name = fund.fund_name if fund else None
 
         return TransactionResponse(
             id=new_transaction.id,
             portfolio_id=new_transaction.portfolio_id,
             fund_code=new_transaction.fund_code,
-            fund_name=fund.fund_name if fund else None,
+            fund_name=fund_display_name,
             transaction_type=new_transaction.transaction_type,
             transaction_date=new_transaction.transaction_date,
             amount=new_transaction.amount,
@@ -405,15 +418,25 @@ async def get_transactions(
         service = PortfolioService(db)
         transactions = service.get_transactions(portfolio_id, limit)
 
+        # 获取组合类型
+        portfolio = service.get_portfolio(portfolio_id)
+
         transaction_responses = []
         for txn in transactions:
-            fund = db.query(PublicFund).filter(PublicFund.fund_code == txn.fund_code).first()
+            # 根据组合类型查询基金名称
+            if portfolio.portfolio_type == 'private':
+                fund = db.query(Fund).filter(Fund.fund_code == txn.fund_code).first()
+                # 私募基金优先使用简称，如果没有简称则使用全名
+                fund_display_name = (fund.short_name or fund.fund_name) if fund else None
+            else:
+                fund = db.query(PublicFund).filter(PublicFund.fund_code == txn.fund_code).first()
+                fund_display_name = fund.fund_name if fund else None
 
             transaction_responses.append(TransactionResponse(
                 id=txn.id,
                 portfolio_id=txn.portfolio_id,
                 fund_code=txn.fund_code,
-                fund_name=fund.fund_name if fund else None,
+                fund_name=fund_display_name,
                 transaction_type=txn.transaction_type,
                 transaction_date=txn.transaction_date,
                 amount=txn.amount,
