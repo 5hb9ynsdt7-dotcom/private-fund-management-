@@ -326,8 +326,9 @@ async def create_or_update_strategy(
             # 策略覆盖：更新已有策略
             existing_strategy.main_strategy = strategy_data.main_strategy
             existing_strategy.sub_strategy = strategy_data.sub_strategy
+            existing_strategy.project_name = strategy_data.project_name
             existing_strategy.is_qd = strategy_data.is_qd
-            
+
             db.commit()
             db.refresh(existing_strategy)
             
@@ -341,6 +342,7 @@ async def create_or_update_strategy(
             # 创建新策略
             new_strategy = Strategy(
                 fund_code=strategy_data.fund_code,
+                project_name=strategy_data.project_name,
                 main_strategy=strategy_data.main_strategy,
                 sub_strategy=strategy_data.sub_strategy,
                 is_qd=strategy_data.is_qd
@@ -453,6 +455,49 @@ async def get_main_strategy_options():
     }
 
 
+@router.get("/enums/project-names", summary="获取所有项目名称")
+async def get_project_names(
+    search: Optional[str] = Query(None, description="模糊搜索项目名称"),
+    db: Session = Depends(get_db)
+):
+    """
+    获取所有不重复的项目名称列表
+    用于前端项目名称输入框的自动完成功能
+
+    **参数：**
+    - search: 可选，模糊搜索项目名称
+
+    **返回：**
+    - project_names: 项目名称列表
+    """
+    try:
+        # 查询所有不重复的项目名称（排除空值）
+        query = db.query(Strategy.project_name).filter(
+            Strategy.project_name.isnot(None),
+            Strategy.project_name != ''
+        ).distinct()
+
+        # 如果有搜索条件，添加模糊匹配
+        if search:
+            query = query.filter(Strategy.project_name.like(f"%{search}%"))
+
+        # 获取结果并排序
+        project_names = [row[0] for row in query.all()]
+        project_names.sort()
+
+        return {
+            "project_names": project_names,
+            "total": len(project_names)
+        }
+
+    except Exception as e:
+        logger.error(f"获取项目名称列表失败: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"获取项目名称列表失败: {str(e)}"
+        )
+
+
 @router.get("/{fund_code}", response_model=StrategyResponse, summary="获取单个基金策略")
 async def get_strategy_by_fund_code(
     fund_code: str,
@@ -494,6 +539,7 @@ async def get_strategy_by_fund_code(
         strategy_response = StrategyResponse(
             fund_code=strategy.fund_code,
             fund_name=fund.fund_name,
+            project_name=strategy.project_name,
             main_strategy=strategy.main_strategy,
             sub_strategy=strategy.sub_strategy,
             is_qd=strategy.is_qd
@@ -635,6 +681,7 @@ async def get_strategy_list(
             strategy_response = StrategyResponse(
                 fund_code=strategy.fund_code,
                 fund_name=strategy.fund.fund_name if strategy.fund else None,
+                project_name=strategy.project_name,
                 main_strategy=strategy.main_strategy,
                 sub_strategy=strategy.sub_strategy,
                 is_qd=strategy.is_qd

@@ -18,8 +18,17 @@
     <el-card v-else shadow="hover" class="table-card">
       <template #header>
         <div class="card-header">
-          <span>项目列表</span>
-          <el-tag type="info">共 {{ projects.length }} 个项目</el-tag>
+          <div class="header-left">
+            <span>项目列表</span>
+            <el-tag type="info">共 {{ projects.length }} 个项目</el-tag>
+          </div>
+          <el-button
+            type="primary"
+            @click="showAddProjectDialog"
+            :icon="Plus"
+          >
+            添加项目
+          </el-button>
         </div>
       </template>
 
@@ -162,6 +171,62 @@
         <li>系统支持按月录入数据，并自动计算相关比例</li>
       </ul>
     </el-alert>
+
+    <!-- 添加项目对话框 -->
+    <el-dialog
+      v-model="addProjectDialogVisible"
+      title="添加项目"
+      width="600px"
+      :close-on-click-modal="false"
+    >
+      <el-form :model="addProjectForm" label-width="100px">
+        <el-form-item label="选择项目">
+          <el-select
+            v-model="addProjectForm.projectName"
+            placeholder="请选择或搜索项目名称"
+            filterable
+            clearable
+            style="width: 100%"
+            @change="handleProjectSelect"
+          >
+            <el-option
+              v-for="projectName in availableProjects"
+              :key="projectName"
+              :label="projectName"
+              :value="projectName"
+            />
+          </el-select>
+        </el-form-item>
+
+        <el-alert
+          v-if="addProjectForm.projectName"
+          :title="`已选择项目：${addProjectForm.projectName}`"
+          type="success"
+          :closable="false"
+          style="margin-top: 16px"
+        />
+
+        <el-alert
+          v-if="!loadingAvailableProjects && availableProjects.length === 0"
+          title="暂无项目"
+          description="系统中没有配置项目名称的产品，请先在策略管理中配置项目名称"
+          type="info"
+          :closable="false"
+          style="margin-top: 16px"
+        />
+      </el-form>
+
+      <template #footer>
+        <el-button @click="addProjectDialogVisible = false">取消</el-button>
+        <el-button
+          type="primary"
+          @click="confirmAddProject"
+          :disabled="!addProjectForm.projectName"
+        >
+          确定并进入维护
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -169,8 +234,9 @@
 import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Loading } from '@element-plus/icons-vue'
+import { Loading, Plus } from '@element-plus/icons-vue'
 import projectHoldingAPI from '@/api/project-holding'
+import { strategyAPI } from '@/api/strategy'
 
 // 路由
 const router = useRouter()
@@ -178,6 +244,12 @@ const router = useRouter()
 // 响应式数据
 const loading = ref(false)
 const projects = ref([])
+const addProjectDialogVisible = ref(false)
+const loadingAvailableProjects = ref(false)
+const availableProjects = ref([])
+const addProjectForm = ref({
+  projectName: ''
+})
 
 // 获取项目列表
 const fetchProjectList = async () => {
@@ -223,12 +295,18 @@ const sortedProjects = computed(() => {
 
   // 第二步：对过滤后的项目进行排序
   return [...filteredProjects].sort((a, b) => {
-    // 第一级：按大类策略排序
-    const mainStrategyOrder = getMainStrategyOrder(a.main_strategy, b.main_strategy)
-    if (mainStrategyOrder !== 0) return mainStrategyOrder
+    // 第一级：按最新数据月份降序排序（202601 > 202512）
+    const dateA = a.latest_data_month || '000000'
+    const dateB = b.latest_data_month || '000000'
 
-    // 第二级：按持仓市值从大到小排序
-    return (b.total_market_value || 0) - (a.total_market_value || 0)
+    if (dateA !== dateB) {
+      return dateB.localeCompare(dateA) // 降序：新的在前
+    }
+
+    // 第二级：同一月份内按项目名称首字母排序
+    const nameA = a.project_name || ''
+    const nameB = b.project_name || ''
+    return nameA.localeCompare(nameB, 'zh-CN')
   })
 })
 
@@ -288,6 +366,49 @@ const deleteProject = async (projectName) => {
   }
 }
 
+// 显示添加项目对话框
+const showAddProjectDialog = async () => {
+  addProjectDialogVisible.value = true
+  addProjectForm.value.projectName = ''
+  await fetchAvailableProjects()
+}
+
+// 获取可用的项目列表（从策略表中获取全量项目）
+const fetchAvailableProjects = async () => {
+  loadingAvailableProjects.value = true
+  try {
+    // 获取所有项目名称
+    const response = await strategyAPI.getProjectNames()
+    availableProjects.value = response.project_names || []
+
+  } catch (error) {
+    console.error('获取项目列表失败:', error)
+    ElMessage.error('获取项目列表失败')
+  } finally {
+    loadingAvailableProjects.value = false
+  }
+}
+
+// 处理项目选择
+const handleProjectSelect = (projectName) => {
+  console.log('选择项目:', projectName)
+}
+
+// 确认添加项目并进入维护页面
+const confirmAddProject = () => {
+  if (!addProjectForm.value.projectName) {
+    ElMessage.warning('请选择项目')
+    return
+  }
+
+  addProjectDialogVisible.value = false
+
+  // 直接跳转到项目详情页面进行维护
+  navigateToDetail(addProjectForm.value.projectName)
+
+  ElMessage.success(`已进入项目"${addProjectForm.value.projectName}"的维护页面`)
+}
+
 // 组件挂载时获取数据
 onMounted(() => {
   fetchProjectList()
@@ -343,6 +464,12 @@ onMounted(() => {
   align-items: center;
   font-weight: 600;
   color: #303133;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
 .project-name-link {

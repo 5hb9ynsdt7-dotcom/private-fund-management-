@@ -29,6 +29,13 @@ export const strategyAPI = {
     return request.get('/api/strategy/enums/main-strategies')
   },
 
+  // 获取项目名称列表（用于自动完成）
+  getProjectNames(search = '') {
+    return request.get('/api/strategy/enums/project-names', {
+      params: { search }
+    })
+  },
+
   // 获取策略分布统计
   getStrategyDistribution() {
     return request.get('/api/strategy/statistics/distribution')

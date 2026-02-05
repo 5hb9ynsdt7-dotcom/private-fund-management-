@@ -24,6 +24,17 @@
           clearable
         />
       </el-form-item>
+
+      <el-form-item label="项目名称">
+        <el-autocomplete
+          v-model="formData.project_name"
+          :fetch-suggestions="queryProjectNames"
+          placeholder="请输入项目名称（可选）"
+          clearable
+          style="width: 100%"
+          :trigger-on-focus="false"
+        />
+      </el-form-item>
       
       <el-form-item label="大类策略" prop="main_strategy">
         <el-select
@@ -113,6 +124,7 @@ const strategyMapping = {
 const formData = reactive({
   fund_code: '',
   fund_name: '',
+  project_name: '',
   main_strategy: '',
   sub_strategy: '',
   is_qd: null
@@ -150,6 +162,20 @@ const availableSubStrategies = computed(() => {
   return strategyMapping[formData.main_strategy] || []
 })
 
+// 查询项目名称（用于自动完成）
+const queryProjectNames = async (queryString, cb) => {
+  try {
+    const response = await strategyAPI.getProjectNames(queryString)
+    const suggestions = response.project_names.map(name => ({
+      value: name
+    }))
+    cb(suggestions)
+  } catch (error) {
+    console.error('获取项目名称失败:', error)
+    cb([])
+  }
+}
+
 // 处理大类策略变化
 const handleMajorStrategyChange = (value) => {
   // 清空细分策略选择
@@ -169,6 +195,7 @@ const handleSubmit = async () => {
     const strategyData = {
       fund_code: formData.fund_code.trim(),
       fund_name: formData.fund_name.trim(),
+      project_name: formData.project_name ? formData.project_name.trim() : null,
       main_strategy: formData.main_strategy,
       sub_strategy: formData.sub_strategy.trim(),
       is_qd: formData.is_qd
@@ -200,6 +227,7 @@ const handleReset = () => {
   Object.assign(formData, {
     fund_code: '',
     fund_name: '',
+    project_name: '',
     main_strategy: '',
     sub_strategy: '',
     is_qd: null

@@ -20,6 +20,7 @@ class StrategyCreateUpdate(BaseModel):
     """创建/更新策略的输入模型（存在则更新）"""
     fund_code: str = Field(..., min_length=6, max_length=6, description="基金代码，6位字符")
     fund_name: Optional[str] = Field(None, description="基金名称（可选，用于同步更新基金表）")
+    project_name: Optional[str] = Field(None, max_length=50, description="项目名称（可选）")
     main_strategy: str = Field(..., min_length=1, max_length=50, description="大类策略，支持任意分类")
     sub_strategy: str = Field(..., min_length=1, max_length=50, description="细分策略，文本输入")
     is_qd: bool = Field(False, description="是否QD产品，默认false")
@@ -64,6 +65,7 @@ class StrategyResponse(BaseModel):
     """策略记录响应模型 - 完整策略JSON（含所有字段）"""
     fund_code: str
     fund_name: Optional[str] = None
+    project_name: Optional[str] = None
     main_strategy: str
     sub_strategy: str
     is_qd: bool
