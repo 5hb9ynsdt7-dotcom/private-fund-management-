@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>检查产品配置</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            border-bottom: 2px solid #409EFF;
+            padding-bottom: 10px;
+        }
+        .section {
+            margin: 20px 0;
+        }
+        .section h2 {
+            color: #606266;
+            font-size: 18px;
+        }
+        pre {
+            background: #f9f9f9;
+            padding: 15px;
+            border-radius: 4px;
+            overflow-x: auto;
+            border: 1px solid #ddd;
+        }
+        .highlight {
+            background: #fff3cd;
+            padding: 10px;
+            border-left: 4px solid #ffc107;
+            margin: 10px 0;
+        }
+        .error {
+            background: #f8d7da;
+            padding: 10px;
+            border-left: 4px solid #dc3545;
+            margin: 10px 0;
+        }
+        .success {
+            background: #d4edda;
+            padding: 10px;
+            border-left: 4px solid #28a745;
+            margin: 10px 0;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 10px 0;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        th {
+            background: #409EFF;
+            color: white;
+        }
+        tr:nth-child(even) {
+            background: #f9f9f9;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>量化产品配置检查工具</h1>
+        
+        <div class="section">
+            <h2>1. localStorage 中的产品配置</h2>
+            <div id="configStatus"></div>
+            <pre id="configOutput"></pre>
+        </div>
+
+        <div class="section">
+            <h2>2. 重点产品检查</h2>
+            <div id="keyProducts"></div>
+        </div>
+
+        <div class="section">
+            <h2>3. 所有产品配置列表</h2>
+            <div id="allProducts"></div>
+        </div>
+    </div>
+
+    <script>
+        // 检查 localStorage
+        const configStr = localStorage.getItem('quantProductConfigs');
+        const configStatus = document.getElementById('configStatus');
+        const configOutput = document.getElementById('configOutput');
+        const keyProducts = document.getElementById('keyProducts');
+        const allProducts = document.getElementById('allProducts');
+
+        if (!configStr) {
+            configStatus.innerHTML = '<div class="error">❌ 未找到 quantProductConfigs，请先在产品列表页面配置产品</div>';
+            configOutput.textContent = '(空)';
+        } else {
+            try {
+                const configs = JSON.parse(configStr);
+                const count = Object.keys(configs).length;
+                
+                configStatus.innerHTML = `<div class="success">✅ 找到 ${count} 个产品配置</div>`;
+                configOutput.textContent = JSON.stringify(configs, null, 2);
+
+                // 检查重点产品
+                const keyProductCodes = {
+                    'SH7639': '龙旗巨星一号',
+                    'SRG289': '平方和鼎盛中证1000指数增强23号'
+                };
+
+                let keyHtml = '<table><tr><th>产品名称</th><th>基金代码</th><th>跟踪指数</th><th>产品类型</th><th>状态</th></tr>';
+                
+                for (const [code, name] of Object.entries(keyProductCodes)) {
+                    const config = configs[code];
+                    if (config) {
+                        const indexName = {
+                            '000905.SH': '中证500',
+                            '000300.SH': '沪深300',
+                            '000852.SH': '中证1000',
+                            '000510.SH': '中证A500',
+                            '000906.SH': '中证800',
+                            '932000.CSI': '中证2000'
+                        }[config.trackingIndex] || config.trackingIndex;
+
+                        keyHtml += `<tr>
+                            <td>${name}</td>
+                            <td>${code}</td>
+                            <td>${indexName || '(未配置)'}</td>
+                            <td>${config.productType || '(未配置)'}</td>
+                            <td style="color: ${config.trackingIndex ? 'green' : 'red'}">
+                                ${config.trackingIndex ? '✅ 已配置' : '❌ 缺少跟踪指数'}
+                            </td>
+                        </tr>`;
+                    } else {
+                        keyHtml += `<tr>
+                            <td>${name}</td>
+                            <td>${code}</td>
+                            <td colspan="3" style="color: red">❌ 未找到配置</td>
+                        </tr>`;
+                    }
+                }
+                keyHtml += '</table>';
+                keyProducts.innerHTML = keyHtml;
+
+                // 显示所有产品
+                let allHtml = '<table><tr><th>基金代码</th><th>跟踪指数</th><th>产品类型</th></tr>';
+                for (const [code, config] of Object.entries(configs)) {
+                    const indexName = {
+                        '000905.SH': '中证500',
+                        '000300.SH': '沪深300',
+                        '000852.SH': '中证1000',
+                        '000510.SH': '中证A500',
+                        '000906.SH': '中证800',
+                        '932000.CSI': '中证2000'
+                    }[config.trackingIndex] || config.trackingIndex || '(未配置)';
+
+                    allHtml += `<tr>
+                        <td>${code}</td>
+                        <td>${indexName}</td>
+                        <td>${config.productType || '(未配置)'}</td>
+                    </tr>`;
+                }
+                allHtml += '</table>';
+                allProducts.innerHTML = allHtml;
+
+            } catch (e) {
+                configStatus.innerHTML = '<div class="error">❌ 配置格式错误: ' + e.message + '</div>';
+                configOutput.textContent = configStr;
+            }
+        }
+    </script>
+</body>
+</html>

@@ -733,10 +733,21 @@ const showGroupChart = async (groupName, groupProducts, trackingIndexCode) => {
       return []
     })
 
-    // 获取指数数据
-    const indexCodes = [trackingIndexCode]
-    const indexDataMap = await fetchMultipleBenchmarks(indexCodes)
-    const indexData = indexDataMap[trackingIndexCode] || []
+    // 获取指数数据 - 收集所有产品需要的指数
+    const allIndexCodes = new Set()
+    groupProducts.forEach(product => {
+      if (product.trackingIndex) {
+        allIndexCodes.add(product.trackingIndex)
+      }
+    })
+    // 如果有产品没有配置跟踪指数，使用组别的默认指数
+    if (trackingIndexCode) {
+      allIndexCodes.add(trackingIndexCode)
+    }
+
+    const indexCodesArray = Array.from(allIndexCodes)
+    console.log('获取指数数据:', indexCodesArray)
+    const indexDataMap = await fetchMultipleBenchmarks(indexCodesArray)
 
     // 调用后端API获取周度累计超额曲线数据
     console.log('开始获取周度超额曲线数据...')
@@ -750,15 +761,31 @@ const showGroupChart = async (groupName, groupProducts, trackingIndexCode) => {
       const startDate = navData[0].date
       const endDate = navData[navData.length - 1].date
 
+      // 使用产品自己的跟踪指数，而不是组别的跟踪指数
+      const productIndexCode = product.trackingIndex || trackingIndexCode
+
+      // 如果产品没有配置跟踪指数，跳过
+      if (!productIndexCode) {
+        console.warn(`${product.displayName} 未配置跟踪指数，跳过超额曲线计算`)
+        return Promise.resolve([])
+      }
+
+      // 获取该产品对应的指数数据
+      const productIndexData = indexDataMap[productIndexCode]
+      if (!productIndexData || productIndexData.length === 0) {
+        console.warn(`${product.displayName} 的指数数据 (${productIndexCode}) 为空，跳过超额曲线计算`)
+        return Promise.resolve([])
+      }
+
       // 调用后端API获取周度超额曲线
       return axios.post(`${API_BASE}/api/quantitative/weekly-excess-curve`, {
         fundCode: product.fundCode,
         startDate: startDate,
         endDate: endDate,
-        indexCode: trackingIndexCode,
-        indexDataMap: { [trackingIndexCode]: indexData }
+        indexCode: productIndexCode,  // 使用产品自己的跟踪指数
+        indexDataMap: { [productIndexCode]: productIndexData }
       }).then(response => {
-        console.log(`${product.displayName} 周度超额数据:`, response.data)
+        console.log(`${product.displayName} 周度超额数据 (跟踪指数: ${productIndexCode}):`, response.data)
         return response.data
       }).catch(error => {
         console.error(`获取 ${product.displayName} 周度超额数据失败:`, error)
@@ -773,7 +800,7 @@ const showGroupChart = async (groupName, groupProducts, trackingIndexCode) => {
     await nextTick()
 
     // 绘制图表
-    drawGroupCharts(groupProducts, navDataArrays, indexData, trackingIndexCode, excessDataArrays)
+    drawGroupCharts(groupProducts, navDataArrays, indexDataMap, trackingIndexCode, excessDataArrays)
   } catch (error) {
     console.error('加载图表数据详细错误:', error)
     ElMessage.error('加载图表数据失败：' + error.message)
@@ -783,7 +810,7 @@ const showGroupChart = async (groupName, groupProducts, trackingIndexCode) => {
 }
 
 // 绘制分组图表
-const drawGroupCharts = (products, navDataArrays, indexData, trackingIndexCode, excessDataArrays) => {
+const drawGroupCharts = (products, navDataArrays, indexDataMap, trackingIndexCode, excessDataArrays) => {
   // 初始化图表
   if (groupNavChart) groupNavChart.dispose()
   if (groupExcessChart) groupExcessChart.dispose()
@@ -797,12 +824,17 @@ const drawGroupCharts = (products, navDataArrays, indexData, trackingIndexCode, 
   const productColors = ['#5470C6', '#91CC75', '#FAC858', '#EE6666', '#73C0DE', '#3BA272', '#FC8452', '#9A60B4']
 
   // ==================== 净值曲线部分 ====================
-  // 找到所有净值日期的并集
+  // 找到所有净值日期和指数日期的并集
   const allNavDates = new Set()
   navDataArrays.forEach((navData) => {
     navData.forEach(item => allNavDates.add(item.date))
   })
-  indexData.forEach(item => allNavDates.add(item.date))
+  // 添加所有指数的日期
+  Object.values(indexDataMap).forEach(indexData => {
+    if (indexData && indexData.length > 0) {
+      indexData.forEach(item => allNavDates.add(item.date))
+    }
+  })
 
   const sortedNavDates = Array.from(allNavDates).sort()
 
@@ -814,6 +846,15 @@ const drawGroupCharts = (products, navDataArrays, indexData, trackingIndexCode, 
       return
     }
 
+    // 获取该产品的跟踪指数数据
+    const productIndexCode = product.trackingIndex || trackingIndexCode
+    const productIndexData = indexDataMap[productIndexCode]
+
+    if (!productIndexData || productIndexData.length === 0) {
+      console.warn(`${product.displayName} 的指数数据为空，跳过净值曲线绘制`)
+      return
+    }
+
     // 创建日期到净值的映射
     const navMap = {}
     navData.forEach(item => {
@@ -822,7 +863,7 @@ const drawGroupCharts = (products, navDataArrays, indexData, trackingIndexCode, 
 
     // 创建日期到指数的映射
     const indexMap = {}
-    indexData.forEach(item => {
+    productIndexData.forEach(item => {
       indexMap[item.date] = item.value
     })
 
@@ -902,10 +943,23 @@ const drawGroupCharts = (products, navDataArrays, indexData, trackingIndexCode, 
     })
   })
 
-  // 添加归一化的指数曲线
-  if (indexData.length > 0) {
+  // 添加归一化的指数曲线（为每个唯一的指数添加一条曲线）
+  const addedIndexes = new Set()
+  products.forEach((product, index) => {
+    const productIndexCode = product.trackingIndex || trackingIndexCode
+
+    // 如果这个指数已经添加过了，跳过
+    if (addedIndexes.has(productIndexCode)) {
+      return
+    }
+
+    const productIndexData = indexDataMap[productIndexCode]
+    if (!productIndexData || productIndexData.length === 0) {
+      return
+    }
+
     const indexMap = {}
-    indexData.forEach(item => {
+    productIndexData.forEach(item => {
       indexMap[item.date] = item.value
     })
 
@@ -931,19 +985,21 @@ const drawGroupCharts = (products, navDataArrays, indexData, trackingIndexCode, 
       })
 
       productNavSeries.push({
-        name: `${indexNameMap[trackingIndexCode] || trackingIndexCode}（归一）`,
+        name: `${indexNameMap[productIndexCode] || productIndexCode}（归一）`,
         type: 'line',
         data: normalizedIndexValues,
         smooth: true,
         connectNulls: true,
-        lineStyle: { width: 2.5, color: '#606266' },
+        lineStyle: { width: 2.5, color: '#606266', type: 'dashed' },
         showSymbol: false,
         emphasis: {
           lineStyle: { width: 3 }
         }
       })
+
+      addedIndexes.add(productIndexCode)
     }
-  }
+  })
 
 
   // 净值曲线图配置

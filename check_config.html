@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>检查产品配置</title>
+</head>
+<body>
+    <h1>检查 localStorage 中的产品配置</h1>
+    <pre id="output"></pre>
+    <script>
+        const configs = localStorage.getItem('quantProductConfigs');
+        const output = document.getElementById('output');
+        
+        if (configs) {
+            const parsed = JSON.parse(configs);
+            output.textContent = JSON.stringify(parsed, null, 2);
+            
+            // 特别检查龙旗巨星一号
+            const longqi = parsed['SH7639'];
+            if (longqi) {
+                output.textContent += '\n\n龙旗巨星一号配置:\n' + JSON.stringify(longqi, null, 2);
+            } else {
+                output.textContent += '\n\n⚠️ 未找到龙旗巨星一号(SH7639)的配置';
+            }
+        } else {
+            output.textContent = '未找到 quantProductConfigs';
+        }
+    </script>
+</body>
+</html>

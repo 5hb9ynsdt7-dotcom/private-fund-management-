@@ -5,7 +5,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 const request = axios.create({
   baseURL: import.meta.env.PROD
     ? ''  // 生产环境使用相对路径
-    : 'http://localhost:8000', // 开发环境使用localhost
+    : 'http://localhost:8003', // 开发环境使用localhost
   timeout: 30000,
   headers: {
     'Content-Type': 'application/json'

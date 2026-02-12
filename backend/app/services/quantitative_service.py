@@ -239,6 +239,7 @@ class QuantitativeService:
         """
         严格按日期对齐净值和指数数据
         返回对齐后的数据: {"date": ..., "nav": ..., "index": ...}
+        如果找不到完全匹配的指数日期，查找最近的指数日期（向前查找，最多5个交易日）
         """
         # 查找目标日期对应的净值
         nav_row = self._find_closest_nav(nav_df, target_date, direction)
@@ -253,6 +254,32 @@ class QuantitativeService:
         index_row = index_df[index_df['date'] == nav_date]
 
         if len(index_row) == 0:
+            # 如果找不到完全匹配的日期，查找最近的指数日期（向前查找，最多5个交易日）
+            max_days = 5
+            for i in range(1, max_days + 1):
+                prev_date = nav_date - pd.Timedelta(days=i)
+                index_row = index_df[index_df['date'] == prev_date]
+                if len(index_row) > 0:
+                    # 找到了最近的指数数据
+                    return {
+                        "date": nav_date,  # 使用净值的日期
+                        "nav": nav_row['nav'],
+                        "index": index_row.iloc[0]['value']
+                    }
+
+            # 如果向前查找失败，尝试向后查找
+            for i in range(1, max_days + 1):
+                next_date = nav_date + pd.Timedelta(days=i)
+                index_row = index_df[index_df['date'] == next_date]
+                if len(index_row) > 0:
+                    # 找到了最近的指数数据
+                    return {
+                        "date": nav_date,  # 使用净值的日期
+                        "nav": nav_row['nav'],
+                        "index": index_row.iloc[0]['value']
+                    }
+
+            # 如果都找不到，返回None
             return None
 
         return {
@@ -699,16 +726,33 @@ class QuantitativeService:
         if len(nav_df) == 0 or len(index_df) == 0:
             return []
 
-        # 确定时间范围
+        # 确定时间范围 - 取净值和指数的重叠期
+        nav_start = nav_df['date'].min()
+        nav_end = nav_df['date'].max()
+        index_start = index_df['date'].min()
+        index_end = index_df['date'].max()
+
+        # 计算重叠期
+        overlap_start = max(nav_start, index_start)
+        overlap_end = min(nav_end, index_end)
+
+        # 如果没有重叠期，返回空
+        if overlap_start > overlap_end:
+            print(f"⚠️ [{fund_code}] 净值日期范围 ({nav_start.date()} ~ {nav_end.date()}) 和指数日期范围 ({index_start.date()} ~ {index_end.date()}) 没有重叠")
+            return []
+
+        # 使用用户指定的日期范围，但限制在重叠期内
         if start_date:
-            date_start = pd.to_datetime(start_date)
+            date_start = max(pd.to_datetime(start_date), overlap_start)
         else:
-            date_start = nav_df['date'].min()
+            date_start = overlap_start
 
         if end_date:
-            date_end = pd.to_datetime(end_date)
+            date_end = min(pd.to_datetime(end_date), overlap_end)
         else:
-            date_end = nav_df['date'].max()
+            date_end = overlap_end
+
+        print(f"✓ [{fund_code}] 计算超额曲线的时间范围: {date_start.date()} ~ {date_end.date()}")
 
         # 筛选时间范围内的净值日期
         period_navs = nav_df[(nav_df['date'] >= date_start) & (nav_df['date'] <= date_end)].copy()
@@ -727,6 +771,7 @@ class QuantitativeService:
             # 如果找不到期初数据，使用第一个点作为起点
             period_start_data = self._align_data_by_date(nav_df, index_df, first_date, 'exact')
             if period_start_data is None:
+                print(f"⚠️ [{fund_code}] 无法找到期初数据")
                 return []
 
         # 计算周度累计超额
@@ -762,4 +807,5 @@ class QuantitativeService:
             prev_nav = current_data['nav']
             prev_index = current_data['index']
 
+        print(f"✓ [{fund_code}] 成功计算 {len(result)} 个超额数据点")
         return result

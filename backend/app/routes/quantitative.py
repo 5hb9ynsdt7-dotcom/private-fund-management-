@@ -351,6 +351,16 @@ async def calculate_monthly_excess(
         # 前端传入的产品配置
         product_configs = request_data.get("productConfigs", {})
 
+        # DEBUG: 输出接收到的产品配置
+        print(f"\n========== 计算月度超额 ({year}年) ==========")
+        print(f"接收到的产品配置数量: {len(product_configs)}")
+        if product_configs:
+            print("产品配置详情:")
+            for fund_code, config in product_configs.items():
+                print(f"  {fund_code}: trackingIndex={config.get('trackingIndex')}, productType={config.get('productType')}")
+        else:
+            print("⚠️ 未接收到任何产品配置，将使用智能识别")
+
         # 获取所有量化多头产品
         products_query = db.query(Strategy, Fund).join(
             Fund, Strategy.fund_code == Fund.fund_code
