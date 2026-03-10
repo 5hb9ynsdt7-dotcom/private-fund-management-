@@ -697,7 +697,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import axios from 'axios'
 import html2canvas from 'html2canvas'
 
-const API_BASE = import.meta.env.PROD ? '' : 'http://localhost:8000'
+const API_BASE = import.meta.env.PROD ? '' : 'http://localhost:8003'
 
 // 细分策略颜色映射
 const strategyColors = {

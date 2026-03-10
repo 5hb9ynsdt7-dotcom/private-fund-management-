@@ -17,7 +17,7 @@ from ..database import get_db
 logger = logging.getLogger(__name__)
 
 # Tushare Pro Token
-TUSHARE_TOKEN = "741685d4e34ced0e4e7e0439d7e013a24e1dd31aff685f06cf51a683"
+TUSHARE_TOKEN = "6fa02a24e7fade97c6e90ec6478da2b200ec7006573a24e278db239e"
 
 # 初始化 Tushare Pro
 ts.set_token(TUSHARE_TOKEN)

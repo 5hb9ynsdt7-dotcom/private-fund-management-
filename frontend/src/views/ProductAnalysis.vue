@@ -653,7 +653,7 @@ import * as echarts from 'echarts'
 import html2canvas from 'html2canvas'
 import { fetchMultipleBenchmarks } from '@/utils/benchmarkData'
 
-const API_BASE = import.meta.env.PROD ? '' : 'http://localhost:8000'
+const API_BASE = import.meta.env.PROD ? '' : 'http://localhost:8003'
 
 const loading = ref(false)
 const downloadLoading = ref(false)

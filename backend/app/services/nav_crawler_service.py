@@ -5,6 +5,7 @@ Noah CRM NAV Crawler Service
 
 import requests
 import logging
+import time
 from typing import Dict, List, Tuple, Optional
 from datetime import datetime, date
 from sqlalchemy.orm import Session
@@ -145,66 +146,90 @@ class NoahCRMCrawler:
                 'message': f'登录出错: {str(e)}'
             }
 
-    def fetch_nav_data(self, product_id: str, nav_type: str = "1") -> Dict:
+    def fetch_nav_data(self, product_id: str, nav_type: str = "1", max_retries: int = 3) -> Dict:
         """
-        抓取单个产品的净值数据
+        抓取单个产品的净值数据（带重试机制）
 
         参数:
             product_id: 诺亚CRM产品ID
             nav_type: "1"=单位净值, "2"=累计净值
+            max_retries: 最大重试次数
 
         返回:
             净值数据列表
         """
-        try:
-            payload = {
-                "duringDate": "",  # 空字符串表示全部历史数据
-                "shareCatId": "",
-                "batchId": "",
-                "productId": product_id,
-                "type": nav_type
-            }
+        payload = {
+            "duringDate": "",  # 空字符串表示全部历史数据
+            "shareCatId": "",
+            "batchId": "",
+            "productId": product_id,
+            "type": nav_type
+        }
 
-            response = self.session.post(
-                self.NET_VALUE_URL,
-                json=payload,
-                headers=self.headers,
-                timeout=30
-            )
-            response.raise_for_status()
+        last_error = None
 
-            result = response.json()
+        for attempt in range(max_retries):
+            try:
+                if attempt > 0:
+                    # 重试前等待，使用指数退避：2秒、4秒、8秒
+                    wait_time = 2 ** attempt
+                    logger.info(f"产品 {product_id} 第 {attempt + 1} 次重试，等待 {wait_time} 秒...")
+                    time.sleep(wait_time)
 
-            if result.get('code') == '0':
-                response_data = result.get('response', {})
-                range_data_list = response_data.get('rangeDataList', [])
+                response = self.session.post(
+                    self.NET_VALUE_URL,
+                    json=payload,
+                    headers=self.headers,
+                    timeout=60  # 增加到60秒适应跨国网络
+                )
+                response.raise_for_status()
 
-                if range_data_list:
-                    nav_list = range_data_list[0].get('netValueList', [])
-                    logger.info(f"产品 {product_id} 获取到 {len(nav_list)} 条净值记录")
-                    return {
-                        'success': True,
-                        'data': nav_list
-                    }
+                result = response.json()
+
+                if result.get('code') == '0':
+                    response_data = result.get('response', {})
+                    range_data_list = response_data.get('rangeDataList', [])
+
+                    if range_data_list:
+                        nav_list = range_data_list[0].get('netValueList', [])
+                        logger.info(f"产品 {product_id} 获取到 {len(nav_list)} 条净值记录")
+                        return {
+                            'success': True,
+                            'data': nav_list
+                        }
+                    else:
+                        return {
+                            'success': False,
+                            'message': '没有净值数据'
+                        }
                 else:
+                    error_msg = result.get('message', '获取净值失败')
+                    logger.error(f"获取净值失败: {error_msg}")
                     return {
                         'success': False,
-                        'message': '没有净值数据'
+                        'message': error_msg
                     }
-            else:
-                error_msg = result.get('message', '获取净值失败')
-                logger.error(f"获取净值失败: {error_msg}")
-                return {
-                    'success': False,
-                    'message': error_msg
-                }
 
-        except Exception as e:
-            logger.error(f"抓取净值数据出错: {str(e)}")
-            return {
-                'success': False,
-                'message': f'抓取出错: {str(e)}'
-            }
+            except requests.exceptions.Timeout as e:
+                last_error = f'请求超时: {str(e)}'
+                logger.warning(f"产品 {product_id} 请求超时 (尝试 {attempt + 1}/{max_retries})")
+                continue
+            except requests.exceptions.ConnectionError as e:
+                last_error = f'连接错误: {str(e)}'
+                logger.warning(f"产品 {product_id} 连接错误 (尝试 {attempt + 1}/{max_retries})")
+                continue
+            except Exception as e:
+                last_error = f'抓取出错: {str(e)}'
+                logger.error(f"产品 {product_id} 抓取异常: {str(e)}")
+                # 非网络错误不重试
+                break
+
+        # 所有重试都失败
+        logger.error(f"产品 {product_id} 抓取失败，已重试 {max_retries} 次")
+        return {
+            'success': False,
+            'message': last_error or '抓取失败'
+        }
 
     def fetch_fund_nav(self, fund_code: str, product_id: Optional[str] = None) -> Dict:
         """
@@ -367,12 +392,13 @@ class NavCrawlerService:
             'errors': errors
         }
 
-    def crawl_all_funds(self, fund_codes: Optional[List[str]] = None) -> Dict:
+    def crawl_all_funds(self, fund_codes: Optional[List[str]] = None, delay_between_requests: float = 2.0) -> Dict:
         """
-        批量抓取多个基金的净值
+        批量抓取多个基金的净值（带请求间隔）
 
         参数:
             fund_codes: 基金代码列表，如果为None则抓取所有已配置映射的基金
+            delay_between_requests: 每个基金抓取之间的延迟（秒），默认2秒
 
         返回:
             批量处理结果统计
@@ -393,7 +419,11 @@ class NavCrawlerService:
         total_updated = 0
         results = []
 
-        for fund_code in fund_codes:
+        logger.info(f"开始批量抓取 {len(fund_codes)} 个基金的净值数据...")
+
+        for index, fund_code in enumerate(fund_codes, 1):
+            logger.info(f"[{index}/{len(fund_codes)}] 正在抓取基金 {fund_code}...")
+
             result = self.crawl_and_save_nav(fund_code)
             results.append(result)
 
@@ -402,6 +432,15 @@ class NavCrawlerService:
                 total_created += result['created_count']
                 total_updated += result['updated_count']
                 total_failed += result['failed_count']
+                logger.info(f"✓ {fund_code} 成功: 新增{result['created_count']}, 更新{result['updated_count']}")
+            else:
+                logger.error(f"✗ {fund_code} 失败: {result.get('message', '未知错误')}")
+
+            # 在请求之间添加延迟，避免触发反爬虫
+            if index < len(fund_codes):
+                time.sleep(delay_between_requests)
+
+        logger.info(f"批量抓取完成: 总计{len(fund_codes)}个基金, 成功{total_success}条, 失败{total_failed}条")
 
         return {
             'success': True,

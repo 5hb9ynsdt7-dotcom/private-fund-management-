@@ -254,7 +254,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import axios from 'axios'
 
 const router = useRouter()
-const API_BASE = import.meta.env.PROD ? '' : 'http://localhost:8000'
+const API_BASE = import.meta.env.PROD ? '' : 'http://localhost:8003'
 
 // 数据
 const products = ref([])

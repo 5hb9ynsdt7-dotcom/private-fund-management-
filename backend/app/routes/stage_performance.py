@@ -173,8 +173,11 @@ async def get_weekly_performance(
             previous_nav = None
 
             if previous_nav_record and latest_nav:
-                # 使用与最新净值相同的类型
-                previous_nav_value = previous_nav_record.adjusted_accum_nav if use_adjusted else previous_nav_record.accum_nav
+                # 使用与最新净值相同的类型，如果adjusted_accum_nav为null则fallback到accum_nav
+                if use_adjusted:
+                    previous_nav_value = previous_nav_record.adjusted_accum_nav or previous_nav_record.accum_nav
+                else:
+                    previous_nav_value = previous_nav_record.accum_nav
 
                 if previous_nav_value:
                     previous_nav_date = previous_nav_record.nav_date
@@ -186,8 +189,11 @@ async def get_weekly_performance(
             # 计算今年以来涨跌幅
             ytd_return = None
             if ytd_nav_record and latest_nav:
-                # 使用与最新净值相同的类型
-                ytd_nav_value = ytd_nav_record.adjusted_accum_nav if use_adjusted else ytd_nav_record.accum_nav
+                # 使用与最新净值相同的类型，如果adjusted_accum_nav为null则fallback到accum_nav
+                if use_adjusted:
+                    ytd_nav_value = ytd_nav_record.adjusted_accum_nav or ytd_nav_record.accum_nav
+                else:
+                    ytd_nav_value = ytd_nav_record.accum_nav
 
                 if ytd_nav_value:
                     if is_founded_this_year:

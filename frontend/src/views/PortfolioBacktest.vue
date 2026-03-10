@@ -778,7 +778,7 @@ import { ElMessage, ElLoading, ElMessageBox } from 'element-plus'
 import axios from 'axios'
 import * as echarts from 'echarts'
 
-const API_BASE = import.meta.env.PROD ? '' : 'http://localhost:8000'
+const API_BASE = import.meta.env.PROD ? '' : 'http://localhost:8003'
 
 // 产品搜索
 const fundList = ref([])

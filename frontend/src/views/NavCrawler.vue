@@ -435,7 +435,7 @@ const urlDialogVisible = ref(false)
 const productUrl = ref('')
 const selectedFunds = ref([])
 
-const API_BASE = import.meta.env.PROD ? '' : 'http://localhost:8000'
+const API_BASE = import.meta.env.PROD ? '' : 'http://localhost:8003'
 
 // 本地存储键名
 const TOKEN_STORAGE_KEY = 'noah_crm_tokens'

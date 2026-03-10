@@ -279,7 +279,7 @@ import axios from 'axios'
 import * as echarts from 'echarts'
 import { fetchMultipleBenchmarks } from '@/utils/benchmarkData'
 
-const API_BASE = import.meta.env.PROD ? '' : 'http://localhost:8000'
+const API_BASE = import.meta.env.PROD ? '' : 'http://localhost:8003'
 
 // 数据
 const loading = ref(false)
@@ -658,19 +658,56 @@ const handleCalculatePeriod = async () => {
 
     periodExcessData.value = Object.values(productMap)
 
+    // 如果计算结果为空，获取产品列表并显示空数据
+    if (periodExcessData.value.length === 0) {
+      try {
+        const productsResponse = await axios.get(`${API_BASE}/api/quantitative/products`)
+        periodExcessData.value = productsResponse.data.map(product => ({
+          fundCode: product.fundCode,
+          productName: product.productName,
+          displayName: product.displayName,
+          productType: product.productType,
+          trackingIndex: product.trackingIndex,
+          period: null,
+          ytd: null,
+          recent3m: null
+        }))
+        ElMessage.warning('未能计算超额收益，请检查指数数据是否完整')
+      } catch (e) {
+        console.error('获取产品列表失败:', e)
+      }
+    } else {
+      ElMessage.success('区间超额收益计算完成')
+    }
+
     // 保存计算结果到localStorage（key包含日期范围）
     const dateKey = `${customDateRange.value[0]}_${customDateRange.value[1]}`
     const cacheKey = `periodExcessCache_${dateKey}`
     const cacheData = {
-      data: Object.values(productMap),
+      data: periodExcessData.value,
       timestamp: new Date().toISOString(),
       dateRange: customDateRange.value
     }
     localStorage.setItem(cacheKey, JSON.stringify(cacheData))
 
-    ElMessage.success('区间超额收益计算完成')
   } catch (error) {
     ElMessage.error('计算失败：' + error.message)
+    // 计算失败时也尝试显示产品列表
+    try {
+      const productsResponse = await axios.get(`${API_BASE}/api/quantitative/products`)
+      periodExcessData.value = productsResponse.data.map(product => ({
+        fundCode: product.fundCode,
+        productName: product.productName,
+        displayName: product.displayName,
+        productType: product.productType,
+        trackingIndex: product.trackingIndex,
+        period: null,
+        ytd: null,
+        recent3m: null
+      }))
+    } catch (e) {
+      console.error('获取产品列表失败:', e)
+    }
   } finally {
     loading.value = false
   }

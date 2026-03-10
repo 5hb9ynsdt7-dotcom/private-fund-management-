@@ -273,7 +273,7 @@ const hasGapWarning = computed(() => dataGaps.value.length > 0)
 const loadFundData = async () => {
   tableLoading.value = true
   try {
-    const API_BASE = import.meta.env.PROD ? '' : 'http://localhost:8000'
+    const API_BASE = import.meta.env.PROD ? '' : 'http://localhost:8003'
 
     // 并发获取净值数据和分红数据
     const [navResponse, dividendResponse] = await Promise.all([

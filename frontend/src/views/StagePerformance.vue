@@ -492,7 +492,7 @@ import { stagePerformanceAPI } from '@/api/stage-performance'
 import html2canvas from 'html2canvas'
 import axios from 'axios'
 
-const API_BASE = import.meta.env.PROD ? '' : 'http://localhost:8000'
+const API_BASE = import.meta.env.PROD ? '' : 'http://localhost:8003'
 
 // 响应式数据
 const tableLoading = ref(false)

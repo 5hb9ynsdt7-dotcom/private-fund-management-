@@ -14,7 +14,7 @@ const INDICES = [
   { name: '上证指数', code: '000001.SH' },
 ]
 
-const API_BASE = import.meta.env.PROD ? '' : 'http://localhost:8000'
+const API_BASE = import.meta.env.PROD ? '' : 'http://localhost:8003'
 
 /**
  * 检查并初始化指数数据（首次使用）

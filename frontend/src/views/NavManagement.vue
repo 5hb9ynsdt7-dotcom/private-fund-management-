@@ -486,7 +486,7 @@ import { formatDate, formatNumber } from '@/utils'
 import axios from 'axios'
 
 const router = useRouter()
-const API_BASE = import.meta.env.PROD ? '' : 'http://localhost:8000'
+const API_BASE = import.meta.env.PROD ? '' : 'http://localhost:8003'
 
 // 页面状态
 const uploaderRef = ref()
@@ -689,7 +689,7 @@ const handleSaveProductFeatures = async () => {
   productFeaturesSubmitting.value = true
 
   try {
-    const response = await fetch(`http://localhost:8000/api/funds/${currentEditFund.value.fund_code}/product-features`, {
+    const response = await fetch(`http://localhost:8003/api/funds/${currentEditFund.value.fund_code}/product-features`, {
       method: 'PATCH',
       headers: {
         'Content-Type': 'application/json'
@@ -724,7 +724,7 @@ const handleSaveProductFeatures = async () => {
 // 更新产品特征 (保留旧方法以防其他地方使用)
 const updateProductFeatures = async (row) => {
   try {
-    const response = await fetch(`http://localhost:8000/api/funds/${row.fund_code}/product-features`, {
+    const response = await fetch(`http://localhost:8003/api/funds/${row.fund_code}/product-features`, {
       method: 'PATCH',
       headers: {
         'Content-Type': 'application/json'

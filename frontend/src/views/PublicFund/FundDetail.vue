@@ -190,7 +190,7 @@ const analysisDateRange = ref([])
 
 // 上传配置
 const uploadAction = computed(() => {
-  return `${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'}/api/public-fund/nav/upload`
+  return `${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8003'}/api/public-fund/nav/upload`
 })
 const uploadHeaders = computed(() => {
   return {

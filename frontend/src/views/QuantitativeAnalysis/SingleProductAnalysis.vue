@@ -275,7 +275,7 @@ import * as echarts from 'echarts'
 import * as XLSX from 'xlsx'
 
 const route = useRoute()
-const API_BASE = import.meta.env.PROD ? '' : 'http://localhost:8000'
+const API_BASE = import.meta.env.PROD ? '' : 'http://localhost:8003'
 
 // 产品信息
 const productInfo = ref({

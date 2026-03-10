@@ -637,8 +637,8 @@ const loadAvailableObjects = async () => {
   try {
     // 并行加载产品和组合
     const [productsResponse, portfoliosResponse] = await Promise.all([
-      axios.get('http://localhost:8000/api/performance/products'),
-      axios.get('http://localhost:8000/api/portfolio-backtest/portfolios')
+      axios.get('http://localhost:8003/api/performance/products'),
+      axios.get('http://localhost:8003/api/portfolio-backtest/portfolios')
     ])
 
     // 处理产品列表
@@ -725,7 +725,7 @@ const handleCompare = async () => {
     console.log('发送对比请求:', compareObjects)
 
     // 调用后端API进行对比分析
-    const response = await axios.post('http://localhost:8000/api/performance/compare', {
+    const response = await axios.post('http://localhost:8003/api/performance/compare', {
       objects: compareObjects,
       time_range: timeRange.value,
       custom_range: customTimeRange.value.length ? customTimeRange.value : null,
@@ -1276,7 +1276,7 @@ const handleSavePK = async () => {
 
   saving.value = true
   try {
-    await axios.post('http://localhost:8000/api/performance/pk/save', {
+    await axios.post('http://localhost:8003/api/performance/pk/save', {
       title: saveForm.value.title.trim(),
       compare_type: compareType.value,
       objects: selectedObjectsList.value.map(obj => ({
@@ -1304,7 +1304,7 @@ const handleSavePK = async () => {
 const loadPKRecords = async () => {
   loadingHistory.value = true
   try {
-    const response = await axios.get('http://localhost:8000/api/performance/pk/list', {
+    const response = await axios.get('http://localhost:8003/api/performance/pk/list', {
       params: { page: 1, page_size: 50 }
     })
     pkRecords.value = response.data.data || []
@@ -1319,7 +1319,7 @@ const loadPKRecords = async () => {
 // 加载指定的PK记录
 const handleLoadPK = async (pkId) => {
   try {
-    const response = await axios.get(`http://localhost:8000/api/performance/pk/${pkId}`)
+    const response = await axios.get(`http://localhost:8003/api/performance/pk/${pkId}`)
     const record = response.data.data
 
     // 恢复对比配置
@@ -1365,7 +1365,7 @@ const handleDeletePK = async (pkId) => {
       type: 'warning'
     })
 
-    await axios.delete(`http://localhost:8000/api/performance/pk/${pkId}`)
+    await axios.delete(`http://localhost:8003/api/performance/pk/${pkId}`)
     ElMessage.success('删除成功')
 
     // 重新加载列表
