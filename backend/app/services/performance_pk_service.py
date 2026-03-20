@@ -68,10 +68,21 @@ class PerformancePKService:
                     fund = self.db.query(PublicFund).filter(PublicFund.fund_code == fund_code).first()
                     name = fund.fund_name if fund else fund_code
                 elif obj_type == 'portfolio':
-                    # 组合
-                    nav_df = self._get_portfolio_nav(int(obj_id))
+                    # 组合 - 已废弃，使用 backtest 或 live
+                    nav_df = self._get_portfolio_nav_legacy(int(obj_id))
                     portfolio = self.db.query(BacktestPortfolio).filter(BacktestPortfolio.id == int(obj_id)).first()
                     name = portfolio.portfolio_name if portfolio else obj_id
+                elif obj_type == 'backtest':
+                    # 回测组合
+                    nav_df = self._get_portfolio_nav_from_table(int(obj_id), 'backtest')
+                    portfolio = self.db.query(BacktestPortfolio).filter(BacktestPortfolio.id == int(obj_id)).first()
+                    name = portfolio.portfolio_name if portfolio else f"回测组合{obj_id}"
+                elif obj_type == 'live':
+                    # 实盘组合
+                    nav_df = self._get_portfolio_nav_from_table(int(obj_id), 'live')
+                    from ..models_portfolio import PublicFundPortfolio
+                    portfolio = self.db.query(PublicFundPortfolio).filter(PublicFundPortfolio.id == int(obj_id)).first()
+                    name = portfolio.portfolio_name if portfolio else f"实盘组合{obj_id}"
                 else:
                     logger.warning(f"未知的对象类型: {obj_type}")
                     continue
@@ -201,8 +212,8 @@ class PerformancePKService:
             logger.error(f"获取公募基金净值失败 {fund_code}: {str(e)}")
             return None
 
-    def _get_portfolio_nav(self, portfolio_id: int) -> Optional[pd.DataFrame]:
-        """获取组合净值数据 - 从保存的回测结果中读取"""
+    def _get_portfolio_nav_legacy(self, portfolio_id: int) -> Optional[pd.DataFrame]:
+        """获取组合净值数据 - 从保存的回测结果中读取（旧方法，保留兼容性）"""
         try:
             portfolio = self.db.query(BacktestPortfolio).filter(BacktestPortfolio.id == portfolio_id).first()
             if not portfolio:
@@ -231,6 +242,43 @@ class PerformancePKService:
 
         except Exception as e:
             logger.error(f"获取组合净值失败 {portfolio_id}: {str(e)}")
+            return None
+
+    def _get_portfolio_nav_from_table(self, portfolio_id: int, portfolio_type: str) -> Optional[pd.DataFrame]:
+        """
+        从统一的 PortfolioNav 表获取组合净值数据
+
+        Args:
+            portfolio_id: 组合ID
+            portfolio_type: 组合类型 ('backtest' 或 'live')
+
+        Returns:
+            包含 date 和 nav 列的 DataFrame
+        """
+        try:
+            from ..models import PortfolioNav
+
+            # 查询组合净值数据
+            nav_records = self.db.query(PortfolioNav).filter(
+                PortfolioNav.portfolio_type == portfolio_type,
+                PortfolioNav.portfolio_id == portfolio_id
+            ).order_by(PortfolioNav.nav_date).all()
+
+            if not nav_records:
+                logger.warning(f"组合 {portfolio_type}/{portfolio_id} 没有净值数据")
+                return None
+
+            # 转换为 DataFrame
+            df = pd.DataFrame({
+                'date': pd.to_datetime([record.nav_date for record in nav_records]),
+                'nav': [float(record.unit_nav) for record in nav_records]
+            })
+
+            logger.info(f"成功获取组合 {portfolio_type}/{portfolio_id} 的 {len(df)} 条净值数据")
+            return df
+
+        except Exception as e:
+            logger.error(f"获取组合净值失败 {portfolio_type}/{portfolio_id}: {str(e)}")
             return None
 
     def _get_benchmark_data(self, benchmark_code: str, dates: List[str]) -> Optional[pd.DataFrame]:

@@ -545,3 +545,33 @@ async def get_nav_history(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"获取净值历史失败: {str(e)}"
         )
+
+
+@router.post("/{portfolio_id}/calculate-weekly-nav", summary="计算并保存周度净值")
+async def calculate_weekly_nav(
+    portfolio_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    计算实盘组合的周度净值并保存到统一的 PortfolioNav 表
+    用于业绩PK对比
+    """
+    try:
+        service = PortfolioService(db)
+        saved_count = service.calculate_and_save_weekly_nav(portfolio_id)
+
+        return {
+            "success": True,
+            "message": f"成功保存 {saved_count} 条周度净值",
+            "data": {
+                "portfolio_id": portfolio_id,
+                "saved_count": saved_count
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"计算周度净值失败: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"计算周度净值失败: {str(e)}"
+        )

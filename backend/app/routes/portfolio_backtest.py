@@ -169,6 +169,23 @@ async def save_portfolio(
         end_date = datetime.now().strftime('%Y-%m-%d')
         start_date = (datetime.now() - timedelta(days=3*365)).strftime('%Y-%m-%d')
 
+        # 先保存组合配置，获取 ID
+        new_portfolio = BacktestPortfolio(
+            portfolio_name=request.portfolio_name.strip(),
+            portfolio_config=json.dumps(portfolio_config, ensure_ascii=False),
+            initial_capital=request.initial_capital,
+            weight_mode=request.weight_mode,
+            rebalance_frequency=request.rebalance_frequency,
+            reinvest_dividend=request.reinvest_dividend,
+            consider_fees=request.consider_fees,
+            backtest_result=None  # 先设为 None，回测成功后更新
+        )
+
+        db.add(new_portfolio)
+        db.commit()
+        db.refresh(new_portfolio)
+
+        # 运行回测并保存周度净值
         backtest_result_data = None
         try:
             backtest_result = await backtest_service.run_backtest(
@@ -182,28 +199,19 @@ async def save_portfolio(
                 rebalance_frequency=request.rebalance_frequency,
                 reinvest_dividend=request.reinvest_dividend,
                 consider_fees=request.consider_fees,
-                weight_mode=request.weight_mode
+                weight_mode=request.weight_mode,
+                portfolio_id=new_portfolio.id,  # 传递组合 ID
+                portfolio_name=new_portfolio.portfolio_name  # 传递组合名称
             )
             backtest_result_data = json.dumps(backtest_result, ensure_ascii=False)
-            logger.info(f"组合 '{request.portfolio_name}' 回测成功")
+
+            # 更新回测结果
+            new_portfolio.backtest_result = backtest_result_data
+            db.commit()
+
+            logger.info(f"组合 '{request.portfolio_name}' 回测成功，周度净值已保存")
         except Exception as e:
-            logger.warning(f"组合 '{request.portfolio_name}' 回测失败: {str(e)}，将保存配置但不保存回测结果")
-
-        # 创建新的组合记录
-        new_portfolio = BacktestPortfolio(
-            portfolio_name=request.portfolio_name.strip(),
-            portfolio_config=json.dumps(portfolio_config, ensure_ascii=False),
-            initial_capital=request.initial_capital,
-            weight_mode=request.weight_mode,
-            rebalance_frequency=request.rebalance_frequency,
-            reinvest_dividend=request.reinvest_dividend,
-            consider_fees=request.consider_fees,
-            backtest_result=backtest_result_data
-        )
-
-        db.add(new_portfolio)
-        db.commit()
-        db.refresh(new_portfolio)
+            logger.warning(f"组合 '{request.portfolio_name}' 回测失败: {str(e)}，配置已保存但无回测结果")
 
         return APIResponse(
             success=True,

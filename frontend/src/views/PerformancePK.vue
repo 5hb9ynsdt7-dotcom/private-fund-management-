@@ -48,7 +48,13 @@
               >
                 <div style="display: flex; justify-content: space-between; align-items: center;">
                   <span>{{ item.name }}</span>
-                  <el-tag size="small" type="success" style="margin-left: 4px;">组合</el-tag>
+                  <el-tag
+                    size="small"
+                    :type="item.type === 'backtest' ? 'success' : 'warning'"
+                    style="margin-left: 4px;"
+                  >
+                    {{ item.category }}
+                  </el-tag>
                 </div>
               </el-option>
             </el-option-group>
@@ -635,23 +641,22 @@ const getMonthlyDataByYear = (year) => {
 const loadAvailableObjects = async () => {
   loadingProducts.value = true
   try {
-    // 并行加载产品和组合
-    const [productsResponse, portfoliosResponse] = await Promise.all([
-      axios.get('http://localhost:8003/api/performance/products'),
-      axios.get('http://localhost:8003/api/portfolio-backtest/portfolios')
-    ])
+    // 调用新的统一接口获取所有可对比对象
+    const response = await axios.get('http://localhost:8003/api/performance/objects')
+
+    const data = response.data.data || {}
 
     // 处理产品列表
-    productObjects.value = productsResponse.data.data || []
+    productObjects.value = data.products || []
 
-    // 处理组合列表
-    const portfolios = portfoliosResponse.data.data || []
+    // 处理组合列表（包括回测组合和实盘组合）
+    const portfolios = data.portfolios || []
     portfolioObjects.value = portfolios.map(item => ({
-      id: `portfolio_${item.id}`,
-      name: item.portfolio_name,
+      id: `${item.type}_${item.id}`,  // backtest_1 或 live_2
+      name: item.name,
       code: item.id.toString(),
-      category: '组合',
-      type: 'portfolio',
+      category: item.category,  // '回测组合' 或 '实盘组合'
+      type: item.type,  // 'backtest' 或 'live'
       portfolio_id: item.id
     }))
   } catch (error) {
@@ -705,16 +710,23 @@ const handleCompare = async () => {
   try {
     // 准备对比对象数据
     const compareObjects = selectedObjectsList.value.map(obj => {
-      // 对于组合类型，提取真实的portfolio_id
-      if (obj.type === 'portfolio') {
-        // 从id中提取数字部分（去掉portfolio_前缀）
+      // 对于组合类型（backtest 或 live），提取真实的 portfolio_id
+      if (obj.type === 'backtest' || obj.type === 'live') {
+        // 从 id 中提取数字部分（去掉 backtest_ 或 live_ 前缀）
+        const portfolioId = obj.id.replace(`${obj.type}_`, '')
+        return {
+          id: portfolioId,
+          type: obj.type  // 'backtest' 或 'live'
+        }
+      } else if (obj.type === 'portfolio') {
+        // 兼容旧的 portfolio 类型
         const portfolioId = obj.id.replace('portfolio_', '')
         return {
           id: portfolioId,
           type: 'portfolio'
         }
       } else {
-        // 产品类型直接使用id
+        // 产品类型直接使用 id
         return {
           id: obj.id,
           type: obj.type

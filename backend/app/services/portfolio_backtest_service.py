@@ -12,6 +12,7 @@ import numpy as np
 import pandas as pd
 
 from ..models import Nav, Fund
+from .portfolio_nav_service import PortfolioNavService
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +35,9 @@ class PortfolioBacktestService:
         rebalance_frequency: str,
         reinvest_dividend: bool,
         consider_fees: bool,
-        weight_mode: str
+        weight_mode: str,
+        portfolio_id: Optional[int] = None,
+        portfolio_name: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         运行组合回测
@@ -178,6 +181,24 @@ class PortfolioBacktestService:
                 "portfolioCount": len(portfolio)
             }
         }
+
+        # 12. 如果提供了 portfolio_id，保存周度净值到数据库
+        if portfolio_id and portfolio_name:
+            try:
+                weekly_navs = self._extract_weekly_nav(portfolio_nav_series)
+                if weekly_navs:
+                    nav_service = PortfolioNavService()
+                    saved_count = nav_service.save_portfolio_nav_batch(
+                        db=db,
+                        portfolio_type='backtest',
+                        portfolio_id=portfolio_id,
+                        portfolio_name=portfolio_name,
+                        nav_data=weekly_navs
+                    )
+                    logger.info(f"回测组合 {portfolio_name} (ID: {portfolio_id}) 保存了 {saved_count} 条周度净值")
+            except Exception as e:
+                logger.error(f"保存回测组合净值失败: {str(e)}", exc_info=True)
+                # 不影响回测结果返回
 
         return result
 
@@ -1567,4 +1588,57 @@ class PortfolioBacktestService:
         except Exception as e:
             logger.error(f"获取产品基准数据失败: {str(e)}", exc_info=True)
             return None, None
+
+    def _extract_weekly_nav(self, nav_series: Dict[str, float]) -> List[Dict]:
+        """
+        从日度净值序列中提取周度净值（每周五或最后交易日）
+
+        Args:
+            nav_series: 日度净值序列 {'2024-01-01': 1.0, '2024-01-02': 1.01, ...}
+
+        Returns:
+            周度净值列表 [
+                {
+                    'date': '2024-01-05',
+                    'unit_nav': 1.01,
+                    'accum_nav': 1.01,
+                    'total_return': 1.0
+                },
+                ...
+            ]
+        """
+        if not nav_series:
+            return []
+
+        # 转换为 DataFrame 便于处理
+        df = pd.DataFrame([
+            {'date': date, 'nav': nav}
+            for date, nav in sorted(nav_series.items())
+        ])
+        df['date'] = pd.to_datetime(df['date'])
+        df = df.set_index('date')
+
+        # 按周重采样，取每周最后一个交易日
+        weekly_df = df.resample('W-FRI').last()
+
+        # 删除空值（没有交易的周）
+        weekly_df = weekly_df.dropna()
+
+        # 转换为列表
+        weekly_navs = []
+        initial_nav = 1.0  # 初始净值
+
+        for date, row in weekly_df.iterrows():
+            nav = float(row['nav'])
+            total_return = (nav - initial_nav) / initial_nav * 100  # 累计收益率（%）
+
+            weekly_navs.append({
+                'date': date.strftime('%Y-%m-%d'),
+                'unit_nav': nav,
+                'accum_nav': nav,  # 对于回测组合，单位净值=累计净值
+                'total_return': total_return
+            })
+
+        logger.info(f"从 {len(nav_series)} 个日度净值中提取了 {len(weekly_navs)} 个周度净值")
+        return weekly_navs
 

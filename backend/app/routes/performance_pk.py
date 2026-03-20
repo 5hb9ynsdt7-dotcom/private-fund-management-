@@ -123,6 +123,120 @@ async def get_all_products(
         )
 
 
+@router.get("/objects", summary="获取所有可对比对象")
+async def get_all_objects(
+    search: str = Query(None, description="搜索关键词"),
+    db: Session = Depends(get_db)
+):
+    """
+    获取所有可对比的对象（产品+回测组合+实盘组合）
+
+    返回:
+        {
+            "products": [...],  # 产品列表
+            "portfolios": [...] # 组合列表
+        }
+    """
+    try:
+        from ..models import BacktestPortfolio, PortfolioNav
+        from ..models_portfolio import PublicFundPortfolio
+
+        result = {
+            'products': [],
+            'portfolios': []
+        }
+
+        # 1. 获取产品（私募+公募）
+        # 私募基金
+        private_funds_query = db.query(Fund).join(Nav).distinct()
+        if search:
+            private_funds_query = private_funds_query.filter(
+                (Fund.fund_code.like(f"%{search}%")) |
+                (Fund.fund_name.like(f"%{search}%")) |
+                (Fund.short_name.like(f"%{search}%"))
+            )
+        private_funds = private_funds_query.all()
+
+        for fund in private_funds:
+            result['products'].append({
+                'id': fund.fund_code,
+                'code': fund.fund_code,
+                'name': fund.short_name or fund.fund_name,
+                'type': 'private',
+                'category': fund.strategy.main_strategy if fund.strategy else '未分类'
+            })
+
+        # 公募基金
+        public_funds_query = db.query(PublicFund)
+        if search:
+            public_funds_query = public_funds_query.filter(
+                (PublicFund.fund_code.like(f"%{search}%")) |
+                (PublicFund.fund_name.like(f"%{search}%"))
+            )
+        public_funds = public_funds_query.limit(100).all()
+
+        for fund in public_funds:
+            result['products'].append({
+                'id': f"public_{fund.fund_code}",
+                'code': fund.fund_code,
+                'name': fund.fund_name,
+                'type': 'public',
+                'category': fund.fund_type or '公募基金'
+            })
+
+        # 2. 获取回测组合（有净值数据的）
+        backtest_portfolios = db.query(BacktestPortfolio).join(
+            PortfolioNav,
+            (PortfolioNav.portfolio_type == 'backtest') &
+            (PortfolioNav.portfolio_id == BacktestPortfolio.id)
+        ).distinct()
+
+        if search:
+            backtest_portfolios = backtest_portfolios.filter(
+                BacktestPortfolio.portfolio_name.like(f"%{search}%")
+            )
+
+        for portfolio in backtest_portfolios.all():
+            result['portfolios'].append({
+                'id': portfolio.id,
+                'name': portfolio.portfolio_name,
+                'type': 'backtest',
+                'category': '回测组合'
+            })
+
+        # 3. 获取实盘组合（有净值数据的）
+        live_portfolios = db.query(PublicFundPortfolio).join(
+            PortfolioNav,
+            (PortfolioNav.portfolio_type == 'live') &
+            (PortfolioNav.portfolio_id == PublicFundPortfolio.id)
+        ).distinct()
+
+        if search:
+            live_portfolios = live_portfolios.filter(
+                PublicFundPortfolio.portfolio_name.like(f"%{search}%")
+            )
+
+        for portfolio in live_portfolios.all():
+            result['portfolios'].append({
+                'id': portfolio.id,
+                'name': portfolio.portfolio_name,
+                'type': 'live',
+                'category': '实盘组合'
+            })
+
+        return {
+            'success': True,
+            'data': result
+        }
+
+    except Exception as e:
+        logger.error(f"获取对比对象列表失败: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"获取对比对象列表失败: {str(e)}"
+        )
+
+
 @router.post("/compare", summary="业绩对比分析")
 async def compare_performance(
     request: CompareRequest,

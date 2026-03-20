@@ -3,7 +3,7 @@
 Private Fund Management System Database Models
 """
 
-from sqlalchemy import Column, String, Integer, Date, DateTime, Boolean, ForeignKey, UniqueConstraint, Numeric, Text
+from sqlalchemy import Column, String, Integer, Date, DateTime, Boolean, ForeignKey, UniqueConstraint, Numeric, Text, Index
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -660,6 +660,45 @@ class PerformancePKRecord(Base):
 
     def __repr__(self):
         return f"<PerformancePKRecord(id={self.id}, title='{self.title}', created_at='{self.created_at}')>"
+
+
+class PortfolioNav(Base):
+    """
+    组合净值表 - 统一存储各类组合的净值数据
+    支持回测组合、实盘组合的周度/日度净值
+    """
+    __tablename__ = 'portfolio_nav'
+    __table_args__ = (
+        UniqueConstraint('portfolio_type', 'portfolio_id', 'nav_date',
+                        name='uix_portfolio_nav'),
+        Index('idx_portfolio_nav_lookup', 'portfolio_type', 'portfolio_id', 'nav_date'),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+
+    # 组合标识
+    portfolio_type = Column(String(20), nullable=False, comment='组合类型：backtest/live')
+    portfolio_id = Column(Integer, nullable=False, comment='组合ID（关联到具体组合表）')
+    portfolio_name = Column(String(100), comment='组合名称（冗余字段，便于查询）')
+
+    # 净值数据
+    nav_date = Column(Date, nullable=False, index=True, comment='净值日期')
+    unit_nav = Column(Numeric(16, 6), nullable=False, comment='单位净值')
+    accum_nav = Column(Numeric(16, 6), nullable=False, comment='累计净值')
+
+    # 收益数据（可选）
+    daily_return = Column(Numeric(12, 6), comment='日收益率（%）')
+    total_return = Column(Numeric(12, 4), comment='累计收益率（%）')
+
+    # 组合市值（可选）
+    total_value = Column(Numeric(20, 2), comment='组合总市值（元）')
+
+    # 时间戳
+    created_at = Column(DateTime, nullable=False, default=func.now())
+    updated_at = Column(DateTime, nullable=False, default=func.now(), onupdate=func.now())
+
+    def __repr__(self):
+        return f"<PortfolioNav(type='{self.portfolio_type}', id={self.portfolio_id}, date='{self.nav_date}', nav={self.unit_nav})>"
 
 
 class ProductList(Base):

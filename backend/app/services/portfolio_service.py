@@ -695,3 +695,92 @@ class PortfolioService:
         except Exception as e:
             logger.error(f"获取净值历史失败: {str(e)}")
             raise
+
+    def calculate_and_save_weekly_nav(self, portfolio_id: int) -> int:
+        """
+        计算实盘组合的周度净值并保存到统一的 PortfolioNav 表
+        用于业绩PK对比
+
+        Args:
+            portfolio_id: 组合ID
+
+        Returns:
+            保存的周度净值记录数
+        """
+        try:
+            from .portfolio_nav_service import PortfolioNavService
+            import pandas as pd
+
+            # 获取组合信息
+            portfolio = self.db.query(PublicFundPortfolio).filter(
+                PublicFundPortfolio.id == portfolio_id
+            ).first()
+
+            if not portfolio:
+                raise ValueError(f"组合不存在: {portfolio_id}")
+
+            # 获取组合的所有日度净值
+            nav_history = self.get_nav_history(portfolio_id)
+
+            if not nav_history or len(nav_history) == 0:
+                logger.warning(f"组合 {portfolio_id} 没有净值历史数据")
+                return 0
+
+            # 转换为 DataFrame
+            df = pd.DataFrame([
+                {
+                    'date': nav.nav_date,
+                    'total_assets': float(nav.total_assets),
+                    'cumulative_return': float(nav.cumulative_return) if nav.cumulative_return else 0,
+                    'cumulative_return_rate': float(nav.cumulative_return_rate) if nav.cumulative_return_rate else 0
+                }
+                for nav in nav_history
+            ])
+
+            df['date'] = pd.to_datetime(df['date'])
+            df = df.set_index('date')
+
+            # 按周重采样，取每周最后一个交易日
+            weekly_df = df.resample('W-FRI').last()
+            weekly_df = weekly_df.dropna()
+
+            if len(weekly_df) == 0:
+                logger.warning(f"组合 {portfolio_id} 没有周度数据")
+                return 0
+
+            # 计算初始资产（第一个净值记录的总资产）
+            initial_assets = float(nav_history[0].total_assets)
+
+            # 准备周度净值数据
+            weekly_navs = []
+            for date, row in weekly_df.iterrows():
+                total_assets = float(row['total_assets'])
+                # 计算单位净值（以初始资产为基准）
+                unit_nav = total_assets / initial_assets if initial_assets > 0 else 1.0
+                accum_nav = unit_nav  # 对于实盘组合，单位净值=累计净值
+                total_return = float(row['cumulative_return_rate'])
+
+                weekly_navs.append({
+                    'date': date.strftime('%Y-%m-%d'),
+                    'unit_nav': unit_nav,
+                    'accum_nav': accum_nav,
+                    'total_return': total_return,
+                    'total_value': total_assets
+                })
+
+            # 保存到统一的 PortfolioNav 表
+            nav_service = PortfolioNavService()
+            saved_count = nav_service.save_portfolio_nav_batch(
+                db=self.db,
+                portfolio_type='live',
+                portfolio_id=portfolio_id,
+                portfolio_name=portfolio.portfolio_name,
+                nav_data=weekly_navs
+            )
+
+            logger.info(f"实盘组合 {portfolio.portfolio_name} (ID: {portfolio_id}) 保存了 {saved_count} 条周度净值")
+            return saved_count
+
+        except Exception as e:
+            logger.error(f"计算并保存周度净值失败: {str(e)}", exc_info=True)
+            raise
