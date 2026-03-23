@@ -9,7 +9,7 @@ import os
 from datetime import datetime
 
 # 导入路由模块
-from .routes import nav, strategy, position, trade, dividend, transaction, project_holding, stage_performance, nav_crawler, product_analysis, fund, fund_schedule, quantitative, tushare, public_fund, portfolio, portfolio_backtest, performance_pk, product_list
+from .routes import nav, strategy, position, trade, dividend, transaction, project_holding, stage_performance, nav_crawler, product_analysis, fund, fund_schedule, quantitative, tushare, public_fund, portfolio, portfolio_backtest, performance_pk, product_list, product_deep_analysis
 from .database import init_database, get_database_status
 from .init_data import init_data_if_needed
 from .migrations import run_migrations
@@ -150,6 +150,7 @@ app.include_router(nav_crawler.router, tags=["净值抓取"])
 app.include_router(fund.router, tags=["基金管理"])
 app.include_router(strategy.router, tags=["策略管理"])
 app.include_router(product_analysis.router, tags=["产品分析"])
+app.include_router(product_deep_analysis.router, tags=["产品深度分析"])  # 新增产品深度分析模块
 app.include_router(position.router, tags=["持仓分析"])
 app.include_router(dividend.router, tags=["分红管理"])
 app.include_router(trade.router, tags=["交易分析"])

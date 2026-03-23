@@ -745,6 +745,9 @@ class ProductListItem(Base):
         return f"<ProductListItem(id={self.id}, list_id={self.list_id}, fund_code='{self.fund_code}')>"
 
 
+# 导入产品分析模型
+from .models_product_analysis import ProductSectorAllocation, ProductAnalysisSummary
+
 # 数据库表创建顺序（考虑外键依赖）
 TABLES_CREATION_ORDER = [
     Fund,                   # 基金主表（无外键依赖）
@@ -765,4 +768,6 @@ TABLES_CREATION_ORDER = [
     PerformancePKRecord,    # 业绩PK保存记录表（无外键依赖）
     ProductList,            # 产品清单表（无外键依赖）
     ProductListItem,        # 产品清单项表（依赖ProductList和Fund）
+    ProductSectorAllocation,  # 产品行业配置表（依赖Fund）
+    ProductAnalysisSummary,   # 产品分析摘要表（依赖Fund）
 ]

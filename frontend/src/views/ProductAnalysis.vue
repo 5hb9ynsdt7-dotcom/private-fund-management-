@@ -637,6 +637,86 @@
         </el-card>
       </el-col>
     </el-row>
+
+    <!-- 产品深度分析模块 -->
+    <el-card class="deep-analysis-card" v-if="analysisData && deepAnalysisData.exists">
+      <template #header>
+        <div class="card-header">
+          <span>产品深度分析</span>
+          <span class="analysis-period-sub" v-if="deepAnalysisData.analysis_period">
+            分析区间：{{ deepAnalysisData.analysis_period.start_date }} 至 {{ deepAnalysisData.analysis_period.end_date }}
+          </span>
+        </div>
+      </template>
+
+      <!-- 上半部分：文字内容 -->
+      <div class="analysis-summary-horizontal">
+        <!-- 策略描述 -->
+        <div class="summary-section" v-if="deepAnalysisData.strategy_description">
+          <h4>策略特征</h4>
+          <p class="strategy-desc">{{ deepAnalysisData.strategy_description }}</p>
+        </div>
+
+        <!-- 核心亮点和主要风险并排 -->
+        <el-row :gutter="24">
+          <!-- 核心亮点 -->
+          <el-col :span="12" v-if="deepAnalysisData.highlights && deepAnalysisData.highlights.length > 0">
+            <div class="summary-section">
+              <h4>核心亮点</h4>
+              <ul class="highlight-list">
+                <li v-for="(highlight, index) in deepAnalysisData.highlights" :key="index">
+                  <el-icon color="#67C23A"><SuccessFilled /></el-icon>
+                  <span>{{ highlight }}</span>
+                </li>
+              </ul>
+            </div>
+          </el-col>
+
+          <!-- 主要风险 -->
+          <el-col :span="12" v-if="deepAnalysisData.risks && deepAnalysisData.risks.length > 0">
+            <div class="summary-section">
+              <h4>主要风险</h4>
+              <ul class="risk-list">
+                <li v-for="(risk, index) in deepAnalysisData.risks" :key="index">
+                  <el-icon color="#F56C6C"><WarningFilled /></el-icon>
+                  <span>{{ risk }}</span>
+                </li>
+              </ul>
+            </div>
+          </el-col>
+        </el-row>
+      </div>
+
+      <!-- 分隔线 -->
+      <el-divider style="margin: 20px 0;" />
+
+      <!-- 会世元丰CTA2号 (L03092): 两个独立图表 -->
+      <el-row :gutter="24" v-loading="sectorChartLoading" v-if="selectedFundCode === 'L03092'">
+        <el-col :span="12">
+          <div class="chart-title">板块持仓配置（堆叠）</div>
+          <div ref="allocationChartRef" style="width: 100%; height: 450px;"></div>
+        </el-col>
+        <el-col :span="12">
+          <div class="chart-title">板块收益贡献（堆叠）</div>
+          <div ref="returnChartRef" style="width: 100%; height: 450px;"></div>
+        </el-col>
+      </el-row>
+
+      <!-- 磐泽多策略 (L02798): 多空配置图 -->
+      <div v-loading="sectorChartLoading" v-if="selectedFundCode === 'L02798'">
+        <div class="chart-title">各月行业配置多空结构 (2025年1月—2026年2月)</div>
+        <div class="chart-subtitle">正值=多头 负值=空头</div>
+        <div ref="longShortChartRef" style="width: 100%; height: 500px;"></div>
+      </div>
+
+      <!-- 国源恰金2号 (L03143): 多空配置图 -->
+      <div v-loading="sectorChartLoading" v-if="selectedFundCode === 'L03143'">
+        <div class="chart-title">各月行业配置结构 (2025年10月—2026年2月)</div>
+        <div class="chart-subtitle">包含现金管理工具及期货对冲</div>
+        <div ref="longShortChartRef" style="width: 100%; height: 500px;"></div>
+      </div>
+    </el-card>
+
     </div>
     <!-- 导出内容区域结束 -->
 
@@ -649,6 +729,7 @@
 import { ref, onMounted, nextTick } from 'vue'
 import axios from 'axios'
 import { ElMessage, ElLoading } from 'element-plus'
+import { SuccessFilled, WarningFilled } from '@element-plus/icons-vue'
 import * as echarts from 'echarts'
 import html2canvas from 'html2canvas'
 import { fetchMultipleBenchmarks } from '@/utils/benchmarkData'
@@ -664,9 +745,28 @@ const analysisData = ref(null)
 const benchmarkData = ref(null)
 const navChartRef = ref(null)
 const monthlyReturnChartRef = ref(null)
+const allocationChartRef = ref(null)  // 板块持仓配置图表引用
+const returnChartRef = ref(null)  // 板块收益贡献图表引用
+const longShortChartRef = ref(null)  // 多空配置图表引用
 const exportContentRef = ref(null)  // 用于图片导出的内容区域
 let navChart = null
 let monthlyReturnChart = null
+let allocationChart = null  // 板块持仓配置图表实例
+let returnChart = null  // 板块收益贡献图表实例
+let longShortChart = null  // 多空配置图表实例
+
+// 新增：产品深度分析数据
+const deepAnalysisData = ref({
+  exists: false,
+  highlights: [],
+  risks: [],
+  strategy_description: '',
+  analysis_period: null
+})
+
+// 新增：行业配置数据
+const sectorAllocationData = ref([])
+const sectorChartLoading = ref(false)
 
 // 指数名称映射
 const indexNameMap = {
@@ -723,6 +823,9 @@ const loadProductAnalysis = async () => {
     await nextTick()
     renderNavChart()
     renderMonthlyReturnChart()
+
+    // 新增：加载产品深度分析数据
+    await loadDeepAnalysisData(selectedFundCode.value)
 
     ElMessage.success('分析完成')
   } catch (error) {
@@ -1068,6 +1171,542 @@ const downloadPDF = async () => {
     loadingInstance.close()
   }
 }
+
+// 新增：加载产品深度分析数据
+const loadDeepAnalysisData = async (productCode) => {
+  try {
+    console.log('开始加载产品深度分析数据:', productCode)
+
+    // 1. 获取分析摘要
+    const summaryResponse = await axios.get(`${API_BASE}/api/product-deep-analysis/${productCode}/analysis-summary`)
+    const summaryData = summaryResponse.data
+
+    if (summaryData.exists) {
+      deepAnalysisData.value = summaryData
+      console.log('分析摘要加载成功:', summaryData)
+
+      // 2. 获取行业配置数据
+      const allocationResponse = await axios.get(`${API_BASE}/api/product-deep-analysis/${productCode}/sector-allocation`)
+      const allocationData = allocationResponse.data
+
+      if (allocationData.data && allocationData.data.length > 0) {
+        sectorAllocationData.value = allocationData.data
+        console.log('行业配置数据加载成功，共', allocationData.total_months, '个月')
+
+        // 3. 根据产品代码绘制不同类型的图表
+        await nextTick()
+        if (productCode === 'L03092') {
+          // 会世元丰CTA2号：两个独立图表
+          await drawAllocationAndReturnCharts()
+        } else if (productCode === 'L02798') {
+          // 磐泽多策略：多空配置图
+          await drawLongShortChart()
+        } else if (productCode === 'L03143') {
+          // 国源恰金2号：多空配置图
+          await drawLongShortChart()
+        }
+      } else {
+        console.log('该产品暂无行业配置数据')
+      }
+    } else {
+      deepAnalysisData.value.exists = false
+      console.log('该产品暂无深度分析数据')
+    }
+  } catch (error) {
+    console.error('加载产品深度分析数据失败:', error)
+    deepAnalysisData.value.exists = false
+  }
+}
+
+// 新增：绘制板块持仓配置和收益贡献两个图表
+const drawAllocationAndReturnCharts = async () => {
+  if (!allocationChartRef.value || !returnChartRef.value || !sectorAllocationData.value.length) {
+    console.warn('无法绘制图表：缺少容器或数据')
+    return
+  }
+
+  sectorChartLoading.value = true
+
+  try {
+    // 准备数据
+    const months = []
+    const monthLabels = []  // 显示用的月份标签 (8月, 9月...)
+    const sectorsMap = new Map()
+
+    // 遍历所有月份数据
+    for (const monthData of sectorAllocationData.value) {
+      months.push(monthData.month)
+      // 从 "2025-08" 提取 "8月"
+      const monthNum = monthData.month.split('-')[1]
+      monthLabels.push(`${parseInt(monthNum)}月`)
+
+      // 处理多头仓位
+      for (const longPos of monthData.long_positions) {
+        if (!sectorsMap.has(longPos.sector_name)) {
+          sectorsMap.set(longPos.sector_name, { type: 'long', allocationData: [], returnData: [] })
+        }
+        sectorsMap.get(longPos.sector_name).allocationData.push(longPos.allocation_pct)
+      }
+
+      // 补齐缺失数据
+      for (const [sectorName, sectorInfo] of sectorsMap.entries()) {
+        while (sectorInfo.allocationData.length < months.length) {
+          sectorInfo.allocationData.push(0)
+        }
+      }
+    }
+
+    // 定义板块颜色映射（CTA产品板块）
+    const sectorColors = {
+      '豆脂饲料': '#e74c3c',
+      '股指期货': '#3498db',
+      '能源化工': '#2ecc71',
+      '工业金属': '#f39c12',
+      '黑色系': '#9b59b6',
+      '软商品': '#1abc9c',
+      '贵金属': '#e67e22',
+      '国债期货': '#95a5a6'
+    }
+
+    // ========== 图表1: 板块持仓配置（堆叠） ==========
+    if (allocationChart) {
+      allocationChart.dispose()
+    }
+    allocationChart = echarts.init(allocationChartRef.value)
+
+    const allocationSeries = []
+    for (const [sectorName, sectorInfo] of sectorsMap.entries()) {
+      allocationSeries.push({
+        name: sectorName,
+        type: 'bar',
+        stack: 'total',
+        data: sectorInfo.allocationData,
+        itemStyle: { color: sectorColors[sectorName] || '#5470C6' },
+        label: {
+          show: false  // 不显示每个分段的标签，避免太拥挤
+        }
+      })
+    }
+
+    const allocationOption = {
+      tooltip: {
+        trigger: 'axis',
+        axisPointer: { type: 'shadow' },
+        formatter: function(params) {
+          let result = `<div style="font-weight: bold; margin-bottom: 5px;">${params[0].axisValue}</div>`
+          params.forEach(item => {
+            if (item.value > 0) {
+              result += `<div>${item.marker} ${item.seriesName}: ${item.value.toFixed(1)}%</div>`
+            }
+          })
+          return result
+        }
+      },
+      legend: {
+        bottom: 5,
+        type: 'scroll',
+        orient: 'horizontal',
+        pageIconSize: 10,
+        textStyle: { fontSize: 11 },
+        data: allocationSeries.map(s => s.name)
+      },
+      grid: {
+        left: '8%',
+        right: '5%',
+        top: '10px',
+        bottom: '60px',
+        containLabel: true
+      },
+      xAxis: {
+        type: 'category',
+        data: monthLabels,
+        axisLabel: { fontSize: 11 }
+      },
+      yAxis: {
+        type: 'value',
+        name: '配置比例(%)',
+        max: 100,
+        axisLabel: { formatter: '{value}%', fontSize: 10 },
+        splitLine: { lineStyle: { type: 'dashed' } }
+      },
+      series: allocationSeries
+    }
+
+    allocationChart.setOption(allocationOption)
+
+    // ========== 图表2: 板块收益贡献（堆叠） ==========
+    // 模拟收益数据（实际应该从后端获取）
+    const returnDataMock = {
+      '股指期货': [1.86, -0.75, -0.71, -0.38, 0.47, 0.56],
+      '贵金属': [-0.06, 1.34, 0.74, 0.67, 2.42, 2.57],
+      '豆脂饲料': [0.67, -0.69, -0.05, 0.58, -0.83, 0.30],
+      '能源化工': [-0.55, 0.17, 0.71, 0.42, 0.87, -0.58],
+      '工业金属': [0.18, -0.30, 0.30, 0.93, 1.10, 0.36],
+      '黑色系': [0.16, -0.45, 0.06, 0.51, 0.27, -0.24],
+      '软商品': [0.38, 0.25, 0.01, -0.03, 0.37, 0.03],
+      '国债期货': [-0.38, -0.29, 0.24, -0.17, 0.05, 0.06]
+    }
+
+    if (returnChart) {
+      returnChart.dispose()
+    }
+    returnChart = echarts.init(returnChartRef.value)
+
+    // 计算月度总收益
+    const monthlyTotals = []
+    for (let i = 0; i < months.length; i++) {
+      let total = 0
+      for (const sector in returnDataMock) {
+        total += returnDataMock[sector][i]
+      }
+      monthlyTotals.push(total)
+    }
+
+    const returnSeries = []
+    for (const [sectorName, returnData] of Object.entries(returnDataMock)) {
+      returnSeries.push({
+        name: sectorName,
+        type: 'bar',
+        stack: 'total',
+        data: returnData,
+        itemStyle: { color: sectorColors[sectorName] || '#5470C6' }
+      })
+    }
+
+    const returnOption = {
+      tooltip: {
+        trigger: 'axis',
+        axisPointer: { type: 'shadow' },
+        formatter: function(params) {
+          let result = `<div style="font-weight: bold; margin-bottom: 5px;">${params[0].axisValue}</div>`
+          let positiveItems = []
+          let negativeItems = []
+
+          params.forEach(item => {
+            if (item.value > 0) {
+              positiveItems.push(item)
+            } else if (item.value < 0) {
+              negativeItems.push(item)
+            }
+          })
+
+          if (positiveItems.length > 0) {
+            result += '<div style="color: #f56c6c; font-weight: bold; margin-top: 5px;">● 正贡献</div>'
+            positiveItems.forEach(item => {
+              result += `<div>${item.marker} ${item.seriesName}: +${item.value.toFixed(2)}%</div>`
+            })
+          }
+
+          if (negativeItems.length > 0) {
+            result += '<div style="color: #67c23a; font-weight: bold; margin-top: 5px;">● 负贡献</div>'
+            negativeItems.forEach(item => {
+              result += `<div>${item.marker} ${item.seriesName}: ${item.value.toFixed(2)}%</div>`
+            })
+          }
+
+          return result
+        }
+      },
+      legend: {
+        bottom: 5,
+        type: 'scroll',
+        orient: 'horizontal',
+        pageIconSize: 10,
+        textStyle: { fontSize: 11 },
+        data: returnSeries.map(s => s.name)
+      },
+      grid: {
+        left: '8%',
+        right: '5%',
+        top: '10px',
+        bottom: '60px',
+        containLabel: true
+      },
+      xAxis: {
+        type: 'category',
+        data: monthLabels,
+        axisLabel: { fontSize: 11 }
+      },
+      yAxis: {
+        type: 'value',
+        name: '收益贡献(%)',
+        axisLabel: { formatter: '{value}%', fontSize: 10 },
+        splitLine: { lineStyle: { type: 'dashed' } }
+      },
+      series: returnSeries
+    }
+
+    returnChart.setOption(returnOption)
+
+    // 在图表上方添加月度总收益标注
+    returnOption.series.push({
+      name: '月度总收益',
+      type: 'line',
+      data: monthlyTotals,
+      symbol: 'none',
+      lineStyle: { width: 0 },
+      label: {
+        show: true,
+        position: monthlyTotals.map(v => v >= 0 ? 'top' : 'bottom'),
+        formatter: function(params) {
+          const value = params.value
+          return value >= 0 ? `+${value.toFixed(2)}%` : `${value.toFixed(2)}%`
+        },
+        fontSize: 11,
+        fontWeight: 'bold',
+        color: '#000',
+        backgroundColor: 'rgba(255, 255, 255, 0.8)',
+        padding: [2, 4],
+        borderRadius: 3
+      },
+      z: 10
+    })
+    returnChart.setOption(returnOption)
+
+    console.log('板块配置和收益图表绘制完成')
+  } catch (error) {
+    console.error('绘制图表失败:', error)
+  } finally {
+    sectorChartLoading.value = false
+  }
+}
+
+// 新增：绘制磐泽多策略多空配置图
+const drawLongShortChart = async () => {
+  if (!longShortChartRef.value || !sectorAllocationData.value.length) {
+    console.warn('无法绘制多空配置图：缺少容器或数据')
+    return
+  }
+
+  sectorChartLoading.value = true
+
+  try {
+    // 准备数据
+    const months = []
+    const monthLabels = []
+    const sectorsMap = new Map()
+
+    // 第一遍：收集所有板块名称
+    for (const monthData of sectorAllocationData.value) {
+      for (const longPos of monthData.long_positions) {
+        if (!sectorsMap.has(longPos.sector_name)) {
+          sectorsMap.set(longPos.sector_name, { longData: [], shortData: [] })
+        }
+      }
+      for (const shortPos of monthData.short_positions) {
+        if (!sectorsMap.has(shortPos.sector_name)) {
+          sectorsMap.set(shortPos.sector_name, { longData: [], shortData: [] })
+        }
+      }
+    }
+
+    // 第二遍：按月份填充数据
+    for (const monthData of sectorAllocationData.value) {
+      months.push(monthData.month)
+      const [year, month] = monthData.month.split('-')
+      monthLabels.push(`${year}-${month}`)
+
+      // 创建当前月份的数据映射
+      const currentMonthLong = {}
+      const currentMonthShort = {}
+
+      for (const longPos of monthData.long_positions) {
+        currentMonthLong[longPos.sector_name] = longPos.allocation_pct
+      }
+      for (const shortPos of monthData.short_positions) {
+        currentMonthShort[shortPos.sector_name] = -shortPos.allocation_pct
+      }
+
+      // 为所有板块填充当前月份的数据
+      for (const [sectorName, sectorInfo] of sectorsMap.entries()) {
+        sectorInfo.longData.push(currentMonthLong[sectorName] || 0)
+        sectorInfo.shortData.push(currentMonthShort[sectorName] || 0)
+      }
+    }
+
+    // 定义板块颜色映射（股票行业）
+    const sectorColors = {
+      '信息技术': '#4169E1',
+      '金融': '#F4A460',
+      '可选消费': '#CD853F',
+      '可选消费(空)': '#CD853F',
+      '材料': '#5F9EA0',
+      '能源': '#87CEEB',
+      '公用事业': '#B0C4DE',
+      '公用事业(空)': '#B0C4DE',
+      '房地产': '#FF6347',
+      '指数(空)': '#FFA07A',
+      '金属(空)': '#FFB6C1',
+      '半导体': '#9370DB',
+      // L03143专用颜色
+      '现金管理工具': '#E8E8E8',
+      '有色金属': '#DAA520',
+      '汽车': '#FF6B6B',
+      '电力设备': '#4ECDC4',
+      '电子': '#556FB5',
+      '家用电器': '#95E1D3',
+      '基础化工': '#F38181',
+      '期货-有色金属': '#DAA520',
+      '社会服务': '#AA96DA',
+      '其他': '#FCBAD3',
+      '医药生物': '#A8E6CF',
+      '电池': '#FFD93D',
+      '非银金融': '#6BCB77',
+      '农林牧渔': '#C7CEEA',
+      '商贸零售': '#FFEAA7',
+      '石油石化': '#74B9FF',
+      '期货-化工': '#F38181',
+      '科技': '#A29BFE'
+    }
+
+    // 创建多空配置图
+    if (longShortChart) {
+      longShortChart.dispose()
+    }
+    longShortChart = echarts.init(longShortChartRef.value)
+
+    const series = []
+
+    // 添加多头series（正值，实心）
+    for (const [sectorName, sectorInfo] of sectorsMap.entries()) {
+      if (sectorInfo.longData.some(v => v > 0)) {
+        series.push({
+          name: sectorName,
+          type: 'bar',
+          stack: 'total',
+          data: sectorInfo.longData,
+          itemStyle: {
+            color: sectorColors[sectorName] || '#5470C6'
+          }
+        })
+      }
+    }
+
+    // 添加空头series（负值，带斜纹）
+    for (const [sectorName, sectorInfo] of sectorsMap.entries()) {
+      if (sectorInfo.shortData.some(v => v < 0)) {
+        const shortName = sectorName + '(空)'
+        series.push({
+          name: shortName,
+          type: 'bar',
+          stack: 'total',
+          data: sectorInfo.shortData,
+          itemStyle: {
+            color: {
+              type: 'pattern',
+              image: createHatchPattern(sectorColors[sectorName] || '#5470C6'),
+              repeat: 'repeat'
+            }
+          }
+        })
+      }
+    }
+
+    const option = {
+      tooltip: {
+        trigger: 'axis',
+        axisPointer: { type: 'shadow' },
+        formatter: function(params) {
+          let result = `<div style="font-weight: bold; margin-bottom: 5px;">${params[0].axisValue}</div>`
+
+          // 分组显示：多头 vs 空头
+          let longItems = []
+          let shortItems = []
+
+          params.forEach(item => {
+            if (item.value > 0) {
+              longItems.push(item)
+            } else if (item.value < 0) {
+              shortItems.push(item)
+            }
+          })
+
+          if (longItems.length > 0) {
+            result += '<div style="color: #4169E1; font-weight: bold; margin-top: 5px;">● 多头</div>'
+            longItems.forEach(item => {
+              result += `<div>${item.marker} ${item.seriesName}: ${item.value.toFixed(1)}%</div>`
+            })
+          }
+
+          if (shortItems.length > 0) {
+            result += '<div style="color: #FF6347; font-weight: bold; margin-top: 5px;">● 空头</div>'
+            shortItems.forEach(item => {
+              result += `<div>${item.marker} ${item.seriesName}: ${Math.abs(item.value).toFixed(1)}%</div>`
+            })
+          }
+
+          return result
+        }
+      },
+      legend: {
+        bottom: 10,
+        type: 'scroll',
+        orient: 'horizontal',
+        pageIconSize: 10,
+        textStyle: { fontSize: 11 },
+        data: series.map(s => s.name)
+      },
+      grid: {
+        left: '5%',
+        right: '5%',
+        top: '40px',
+        bottom: '80px',
+        containLabel: true
+      },
+      xAxis: {
+        type: 'category',
+        data: monthLabels,
+        axisLabel: {
+          fontSize: 11,
+          rotate: 0
+        }
+      },
+      yAxis: {
+        type: 'value',
+        name: '配置比例(%)',
+        axisLabel: { formatter: '{value}%', fontSize: 10 },
+        splitLine: { lineStyle: { type: 'dashed' } }
+      },
+      series: series
+    }
+
+    longShortChart.setOption(option)
+    console.log('多空配置图绘制完成')
+  } catch (error) {
+    console.error('绘制多空配置图失败:', error)
+  } finally {
+    sectorChartLoading.value = false
+  }
+}
+
+// 辅助函数：创建斜纹图案
+function createHatchPattern(color) {
+  const canvas = document.createElement('canvas')
+  canvas.width = 10
+  canvas.height = 10
+  const ctx = canvas.getContext('2d')
+
+  ctx.strokeStyle = color
+  ctx.lineWidth = 2
+
+  // 绘制斜纹
+  ctx.beginPath()
+  ctx.moveTo(0, 10)
+  ctx.lineTo(10, 0)
+  ctx.stroke()
+
+  ctx.beginPath()
+  ctx.moveTo(-2, 2)
+  ctx.lineTo(2, -2)
+  ctx.stroke()
+
+  ctx.beginPath()
+  ctx.moveTo(8, 12)
+  ctx.lineTo(12, 8)
+  ctx.stroke()
+
+  return canvas
+}
 </script>
 
 <style scoped>
@@ -1173,6 +1812,21 @@ const downloadPDF = async () => {
   justify-content: space-between;
   align-items: center;
   font-weight: 600;
+}
+
+.chart-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #303133;
+  margin-bottom: 15px;
+  text-align: center;
+}
+
+.chart-subtitle {
+  font-size: 12px;
+  color: #909399;
+  margin-bottom: 10px;
+  text-align: center;
 }
 
 .monthly-card {
@@ -1311,6 +1965,86 @@ const downloadPDF = async () => {
   padding: 10px 15px;
   background-color: #f9fafb;
   border-radius: 6px;
+}
+
+/* 产品深度分析样式 */
+.deep-analysis-card {
+  margin-bottom: 20px;
+}
+
+.analysis-period-sub {
+  font-size: 13px;
+  color: #909399;
+  font-weight: normal;
+}
+
+.analysis-summary-horizontal {
+  padding: 10px 0;
+}
+
+.analysis-summary {
+  padding: 10px;
+}
+
+.summary-section {
+  margin-bottom: 20px;
+}
+
+.summary-section h4 {
+  font-size: 15px;
+  font-weight: 600;
+  color: #303133;
+  margin-bottom: 12px;
+  padding-left: 8px;
+  border-left: 3px solid #409EFF;
+}
+
+.strategy-desc {
+  font-size: 14px;
+  color: #606266;
+  line-height: 1.8;
+  padding: 10px;
+  background: #F5F7FA;
+  border-radius: 4px;
+}
+
+.highlight-list,
+.risk-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.highlight-list li,
+.risk-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 0;
+  font-size: 14px;
+  color: #606266;
+  line-height: 1.6;
+}
+
+.highlight-list li .el-icon {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.risk-list li .el-icon {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.sector-chart-container {
+  height: 600px;
+  width: 100%;
+  margin-top: 10px;
+}
+
+.sector-chart {
+  width: 100%;
+  height: 100%;
 }
 
 .recovery-description-full {

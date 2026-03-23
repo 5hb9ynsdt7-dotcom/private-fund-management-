@@ -263,6 +263,60 @@
         </el-table-column>
       </el-table>
     </el-card>
+
+    <!-- 产品深度分析模块 -->
+    <el-card class="deep-analysis-card" v-if="deepAnalysisData.exists">
+      <template #header>
+        <div class="card-header">
+          <span>产品深度分析</span>
+          <span class="analysis-period" v-if="deepAnalysisData.analysis_period">
+            分析区间：{{ deepAnalysisData.analysis_period.start_date }} 至 {{ deepAnalysisData.analysis_period.end_date }}
+          </span>
+        </div>
+      </template>
+
+      <el-row :gutter="20">
+        <!-- 左侧：核心要点 -->
+        <el-col :span="10">
+          <div class="analysis-summary">
+            <!-- 策略描述 -->
+            <div class="summary-section" v-if="deepAnalysisData.strategy_description">
+              <h4>策略特征</h4>
+              <p class="strategy-desc">{{ deepAnalysisData.strategy_description }}</p>
+            </div>
+
+            <!-- 核心亮点 -->
+            <div class="summary-section" v-if="deepAnalysisData.highlights && deepAnalysisData.highlights.length > 0">
+              <h4>核心亮点</h4>
+              <ul class="highlight-list">
+                <li v-for="(highlight, index) in deepAnalysisData.highlights" :key="index">
+                  <el-icon color="#67C23A"><SuccessFilled /></el-icon>
+                  <span>{{ highlight }}</span>
+                </li>
+              </ul>
+            </div>
+
+            <!-- 主要风险 -->
+            <div class="summary-section" v-if="deepAnalysisData.risks && deepAnalysisData.risks.length > 0">
+              <h4>主要风险</h4>
+              <ul class="risk-list">
+                <li v-for="(risk, index) in deepAnalysisData.risks" :key="index">
+                  <el-icon color="#F56C6C"><WarningFilled /></el-icon>
+                  <span>{{ risk }}</span>
+                </li>
+              </ul>
+            </div>
+          </div>
+        </el-col>
+
+        <!-- 右侧：行业配置堆叠图 -->
+        <el-col :span="14">
+          <div class="sector-chart-container" v-loading="sectorChartLoading">
+            <div ref="sectorChartRef" class="sector-chart"></div>
+          </div>
+        </el-col>
+      </el-row>
+    </el-card>
   </div>
 </template>
 
@@ -270,6 +324,7 @@
 import { ref, onMounted, watch, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import { SuccessFilled, WarningFilled } from '@element-plus/icons-vue'
 import axios from 'axios'
 import * as echarts from 'echarts'
 import * as XLSX from 'xlsx'
@@ -309,12 +364,14 @@ const navChartRef = ref(null)
 const excessChartRef = ref(null)
 const drawdownChartRef = ref(null)
 const monthlyChartRef = ref(null)
+const sectorChartRef = ref(null)  // 新增：行业配置图表引用
 
 // 图表实例
 let navChart = null
 let excessChart = null
 let drawdownChart = null
 let monthlyChart = null
+let sectorChart = null  // 新增：行业配置图表实例
 
 // 表格引用
 const dataTableRef = ref(null)
@@ -324,6 +381,19 @@ const monthlyExcessData = ref([])
 
 // 分红数据
 const dividendData = ref([])
+
+// 新增：产品深度分析数据
+const deepAnalysisData = ref({
+  exists: false,
+  highlights: [],
+  risks: [],
+  strategy_description: '',
+  analysis_period: null
+})
+
+// 新增：行业配置数据
+const sectorAllocationData = ref([])
+const sectorChartLoading = ref(false)
 
 // 获取指数名称
 const getIndexName = (indexCode) => {
@@ -588,6 +658,10 @@ const loadProductData = async (forceRefresh = false) => {
       await nextTick()
       await drawChartsWithoutIndex(navData)
     }
+
+    // 7. 加载产品深度分析数据
+    await loadDeepAnalysisData(productId)
+
   } catch (error) {
     console.error('加载产品数据失败:', error)
     ElMessage.error('加载产品数据失败：' + error.message)
@@ -1148,6 +1222,254 @@ const handleExportData = () => {
   ElMessage.success('数据导出成功')
 }
 
+// 新增：加载产品深度分析数据
+const loadDeepAnalysisData = async (productId) => {
+  try {
+    console.log('开始加载产品深度分析数据:', productId)
+
+    // 1. 获取分析摘要
+    const summaryResponse = await axios.get(`${API_BASE}/api/product-deep-analysis/${productId}/analysis-summary`)
+    const summaryData = summaryResponse.data
+
+    if (summaryData.exists) {
+      deepAnalysisData.value = summaryData
+      console.log('分析摘要加载成功:', summaryData)
+
+      // 2. 获取行业配置数据
+      const allocationResponse = await axios.get(`${API_BASE}/api/product-deep-analysis/${productId}/sector-allocation`)
+      const allocationData = allocationResponse.data
+
+      if (allocationData.data && allocationData.data.length > 0) {
+        sectorAllocationData.value = allocationData.data
+        console.log('行业配置数据加载成功，共', allocationData.total_months, '个月')
+
+        // 3. 绘制行业配置图表
+        await nextTick()
+        await drawSectorAllocationChart()
+      } else {
+        console.log('该产品暂无行业配置数据')
+      }
+    } else {
+      deepAnalysisData.value.exists = false
+      console.log('该产品暂无深度分析数据')
+    }
+  } catch (error) {
+    console.error('加载产品深度分析数据失败:', error)
+    deepAnalysisData.value.exists = false
+  }
+}
+
+// 新增：绘制行业配置堆叠图
+const drawSectorAllocationChart = async () => {
+  if (!sectorChartRef.value || !sectorAllocationData.value.length) {
+    console.warn('无法绘制行业配置图：缺少容器或数据')
+    return
+  }
+
+  sectorChartLoading.value = true
+
+  try {
+    // 销毁旧图表
+    if (sectorChart) {
+      sectorChart.dispose()
+    }
+
+    // 初始化图表
+    sectorChart = echarts.init(sectorChartRef.value)
+
+    // 准备数据
+    const months = []
+    const sectorsMap = new Map() // 行业名称 -> 数据数组
+
+    // 遍历所有月份数据
+    for (const monthData of sectorAllocationData.value) {
+      months.push(monthData.month)
+
+      // 处理多头仓位
+      for (const longPos of monthData.long_positions) {
+        if (!sectorsMap.has(longPos.sector_name)) {
+          sectorsMap.set(longPos.sector_name, { type: 'long', data: [] })
+        }
+        sectorsMap.get(longPos.sector_name).data.push(longPos.allocation_pct)
+      }
+
+      // 处理空头仓位
+      for (const shortPos of monthData.short_positions) {
+        const shortKey = `${shortPos.sector_name}(空)`
+        if (!sectorsMap.has(shortKey)) {
+          sectorsMap.set(shortKey, { type: 'short', data: [] })
+        }
+        // 空头用负值表示
+        sectorsMap.get(shortKey).data.push(-Math.abs(shortPos.allocation_pct))
+      }
+
+      // 补齐缺失数据
+      for (const [sectorName, sectorInfo] of sectorsMap.entries()) {
+        while (sectorInfo.data.length < months.length) {
+          sectorInfo.data.push(0)
+        }
+      }
+    }
+
+    // 定义行业颜色映射
+    const sectorColors = {
+      '信息技术': '#5470C6',
+      '材料': '#EE6666',
+      '工业': '#91CC75',
+      '半导体': '#FAC858',
+      '金融': '#73C0DE',
+      '能源': '#3BA272',
+      '房地产': '#FC8452',
+      '可选消费': '#9A60B4',
+      '公用事业': '#EA7CCC',
+      '指数': '#5470C6'
+    }
+
+    // 构建多头系列
+    const longSeries = []
+    for (const [sectorName, sectorInfo] of sectorsMap.entries()) {
+      if (sectorInfo.type === 'long') {
+        longSeries.push({
+          name: sectorName,
+          type: 'bar',
+          stack: 'long',
+          data: sectorInfo.data,
+          itemStyle: {
+            color: sectorColors[sectorName] || '#5470C6'
+          }
+        })
+      }
+    }
+
+    // 构建空头系列
+    const shortSeries = []
+    for (const [sectorName, sectorInfo] of sectorsMap.entries()) {
+      if (sectorInfo.type === 'short') {
+        const originalName = sectorName.replace('(空)', '')
+        shortSeries.push({
+          name: sectorName,
+          type: 'bar',
+          stack: 'short',
+          data: sectorInfo.data,
+          itemStyle: {
+            color: {
+              type: 'pattern',
+              image: createHatchPattern(sectorColors[originalName] || '#67C23A'),
+              repeat: 'repeat'
+            }
+          }
+        })
+      }
+    }
+
+    // 图表配置
+    const option = {
+      title: {
+        text: '各月行业配置多空结构',
+        left: 'center',
+        top: 10,
+        textStyle: {
+          fontSize: 16,
+          fontWeight: 600
+        }
+      },
+      tooltip: {
+        trigger: 'axis',
+        axisPointer: {
+          type: 'shadow'
+        },
+        formatter: function(params) {
+          let result = `<div style="font-weight: bold; margin-bottom: 5px;">${params[0].axisValue}</div>`
+
+          // 分组显示多头和空头
+          const longItems = params.filter(p => p.value >= 0)
+          const shortItems = params.filter(p => p.value < 0)
+
+          if (longItems.length > 0) {
+            result += '<div style="color: #67C23A; font-weight: bold; margin-top: 8px;">● 多头仓位</div>'
+            longItems.forEach(item => {
+              result += `<div>${item.marker} ${item.seriesName}: ${item.value.toFixed(2)}%</div>`
+            })
+          }
+
+          if (shortItems.length > 0) {
+            result += '<div style="color: #F56C6C; font-weight: bold; margin-top: 8px;">● 空头仓位</div>'
+            shortItems.forEach(item => {
+              result += `<div>${item.marker} ${item.seriesName}: ${Math.abs(item.value).toFixed(2)}%</div>`
+            })
+          }
+
+          return result
+        }
+      },
+      legend: {
+        data: [...longSeries.map(s => s.name), ...shortSeries.map(s => s.name)],
+        top: 40,
+        type: 'scroll',
+        pageIconSize: 12,
+        pageTextStyle: {
+          fontSize: 10
+        }
+      },
+      grid: {
+        left: '5%',
+        right: '5%',
+        top: '120px',
+        bottom: '60px',
+        containLabel: true
+      },
+      xAxis: {
+        type: 'category',
+        data: months,
+        axisLabel: {
+          rotate: 45,
+          fontSize: 11
+        }
+      },
+      yAxis: {
+        type: 'value',
+        name: '净敞口(%)',
+        axisLabel: {
+          formatter: '{value}%'
+        },
+        splitLine: {
+          lineStyle: {
+            type: 'dashed'
+          }
+        }
+      },
+      series: [...longSeries, ...shortSeries]
+    }
+
+    sectorChart.setOption(option)
+    console.log('行业配置图表绘制完成')
+  } catch (error) {
+    console.error('绘制行业配置图表失败:', error)
+  } finally {
+    sectorChartLoading.value = false
+  }
+}
+
+// 创建斜纹图案（用于空头）
+const createHatchPattern = (color) => {
+  const canvas = document.createElement('canvas')
+  canvas.width = 10
+  canvas.height = 10
+  const ctx = canvas.getContext('2d')
+
+  ctx.fillStyle = color
+  ctx.fillRect(0, 0, 10, 10)
+
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)'
+  ctx.lineWidth = 1.5
+  ctx.beginPath()
+  ctx.moveTo(0, 10)
+  ctx.lineTo(10, 0)
+  ctx.stroke()
+
+  return canvas
+}
+
 // 监听图表类型切换
 watch(chartType, async (newType) => {
   await nextTick()
@@ -1225,6 +1547,80 @@ watch(monthlyExcessData, () => {
 .data-card {
   margin-bottom: 20px;
   height: 400px;  /* 增加高度以适应多年数据 */
+}
+
+.deep-analysis-card {
+  margin-bottom: 20px;
+}
+
+.analysis-period {
+  font-size: 13px;
+  color: #909399;
+  font-weight: normal;
+}
+
+.analysis-summary {
+  padding: 10px;
+}
+
+.summary-section {
+  margin-bottom: 24px;
+}
+
+.summary-section h4 {
+  font-size: 15px;
+  font-weight: 600;
+  color: #303133;
+  margin-bottom: 12px;
+  padding-left: 8px;
+  border-left: 3px solid #409EFF;
+}
+
+.strategy-desc {
+  font-size: 14px;
+  color: #606266;
+  line-height: 1.8;
+  padding: 10px;
+  background: #F5F7FA;
+  border-radius: 4px;
+}
+
+.highlight-list,
+.risk-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.highlight-list li,
+.risk-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 0;
+  font-size: 14px;
+  color: #606266;
+  line-height: 1.6;
+}
+
+.highlight-list li .el-icon {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.risk-list li .el-icon {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.sector-chart-container {
+  height: 500px;
+  width: 100%;
+}
+
+.sector-chart {
+  width: 100%;
+  height: 100%;
 }
 
 .data-card :deep(.el-card__body) {
